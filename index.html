@@ -60,10 +60,25 @@
         <div class="step-status" id="fileStatus">File with plain page numbers</div>
       </div>
 
-      <!-- STEP 3 — Apply IDs -->
+      <!-- STEP 3 -->
       <div class="step" id="step3">
         <div class="step-head">
           <span class="step-num">3</span>
+          <span class="step-title">Select Notes File</span>
+          <span class="step-check" id="notesCheck"><i data-lucide="check"></i></span>
+        </div>
+        <button class="step-btn" id="pickNotes">
+          <i data-lucide="file-text" class="lg"></i>
+          <span class="step-btn-text" id="notesBtnText">Choose File</span>
+          <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+        </button>
+        <div class="step-status" id="notesStatus">Optional — xhtml file containing footnotes</div>
+      </div>
+
+      <!-- STEP 4 — Apply IDs -->
+      <div class="step" id="step4">
+        <div class="step-head">
+          <span class="step-num">4</span>
           <span class="step-title">ID Prefix</span>
         </div>
         <div class="id-prefix-wrap">
@@ -98,6 +113,11 @@
         <span class="track"></span>
         <span>Roman Letter Detection</span>
       </label>
+
+      <button class="btn-run btn-fn-scan" id="fnRunBtn" disabled>
+        <i data-lucide="file-search"></i>
+        <span id="fnRunBtnText">Scan Footnotes</span>
+      </button>
 
       <button class="btn-run btn-scan" id="runBtn" disabled>
         <i data-lucide="scan-search"></i>
@@ -168,6 +188,7 @@
 </div>
 
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

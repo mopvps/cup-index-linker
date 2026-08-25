@@ -66,6 +66,9 @@ document.getElementById('idPrefixInput').addEventListener('input', checkIdReady)
    STATE
    ========================================================== */
 let dirHandle=null,fileHandle=null,fileHandles={},fixedContent='';
+let notesHandle=null;   // the user-selected notes xhtml file
+let notesFileName='';   // just the filename e.g. "24_894AR_bm1.xhtml"
+let notesAnchorMap={};  // "pageNum:fnNum" -> anchorId  e.g. "222:1" -> "ch9-fn1"
 
 /* review state.
    Each candidate carries state: 'linked' | 'skipped' | 'noanchor'
@@ -76,6 +79,65 @@ let srcContent='';
 let candidates=[];
 let anchorOnly=true;
 let manualAnchorMap={}; // id -> fname for manually assigned anchors
+let seeAlsoLinks=[]; // [{start,end,text,targetId,targetText}]
+const history=[];  // undo stack
+const MAX_HISTORY=50;
+
+function pushHistory(action){
+  history.push(action);
+  if(history.length>MAX_HISTORY) history.shift();
+}
+
+function undo(){
+  if(!history.length){ toast('Nothing to undo','error'); return; }
+  const action=history.pop();
+
+  if(action.type==='cycleState'){
+    const c=candidates[action.i];
+    c.state=action.prevState;
+    paintSpan(action.i);
+    updateSelCount();
+    updateStats(false);
+    toast('Undone: state change','success');
+  }
+
+  else if(action.type==='manualAnchor'){
+    const c=candidates[action.candIndex];
+    c.targetFile=action.prevTargetFile;
+    c.state=action.prevState;
+    if(action.prevState==='manual'){
+      manualAnchorMap[c.id]=action.prevTargetFile;
+    } else {
+      delete manualAnchorMap[c.id];
+    }
+    paintSpan(action.candIndex);
+    updateSelCount();
+    updateStats(false);
+    toast('Undone: manual anchor','success');
+  }
+
+  else if(action.type==='seeAlso'){
+    // remove last seeAlsoLinks entry
+    seeAlsoLinks.splice(action.saIndex,1);
+    // remove the <mark> from preview
+    const mark=document.querySelector(`.sa-linked[data-sa-i="${action.saIndex}"]`);
+    if(mark){
+      const parent=mark.parentNode;
+      while(mark.firstChild) parent.insertBefore(mark.firstChild,mark);
+      parent.removeChild(mark);
+    }
+    renderSeeAlsoTable();
+    toast('Undone: see-also link','success');
+  }
+}
+
+// Ctrl+Z listener
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){
+    e.preventDefault();
+    undo();
+  }
+});
 let rangeMin=null,rangeMax=null;
 let applied=false;
 let romanMode=false;
@@ -93,11 +155,57 @@ const runBtn=document.getElementById('runBtn'),
       summaryBar=document.getElementById('summaryBar'),
       saveBtn=document.getElementById('saveBtn'),
       copyBtn=document.getElementById('copyBtn');
+const fnRunBtn=document.getElementById('fnRunBtn'),
+      fnRunBtnText=document.getElementById('fnRunBtnText');
 
-function checkReady(){runBtn.disabled=!(dirHandle&&fileHandle);}
+function checkReady(){
+  // Scan & Fix needs folder + index file
+  runBtn.disabled=!(dirHandle&&fileHandle);
+  // Scan Footnotes needs notes file + index file only
+  fnRunBtn.disabled=!(notesHandle&&fileHandle);
+}
 function checkIdReady(){
   const prefix=document.getElementById('idPrefixInput').value.trim();
   document.getElementById('applyIdBtn').disabled=!(dirHandle&&fileHandle&&prefix);
+}
+
+function truncate(str,n){
+  return str.length>n ? str.slice(0,n)+'…' : str;
+}
+
+function getTopLevelLiEntries(){
+  // Parse srcContent for top-level <li> tags (not nested inside another <li>)
+  const entries=[];
+  const re=/<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
+  let depth=0, m;
+  re.lastIndex=0;
+  // Walk the full content tracking nesting
+  const liOpenRe=/<li\b[^>]*>/gi;
+  const liCloseRe=/<\/li>/gi;
+  // Simpler approach: collect all <li> with their id and text
+  const allLi=/<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
+  let prev=0;
+  const positions=[];
+  let mm;
+  while((mm=allLi.exec(srcContent))!==null){
+    positions.push({index:mm.index,attrs:mm[1],inner:mm[2]});
+  }
+  // Top-level = <li> not preceded by an unclosed <li> before it
+  // Simple heuristic: top-level li has no <li> open without close before it
+  for(const pos of positions){
+    const before=srcContent.slice(0,pos.index);
+    const openCount=(before.match(/<li\b/gi)||[]).length;
+    const closeCount=(before.match(/<\/li>/gi)||[]).length;
+    if(openCount===closeCount){
+      // extract id
+      const idMatch=/\bid="([^"]+)"/.exec(pos.attrs);
+      const id=idMatch?idMatch[1]:null;
+      // extract plain text (strip tags)
+      const text=pos.inner.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+      if(id) entries.push({id,text});
+    }
+  }
+  return entries;
 }
 
 /* ==========================================================
@@ -254,6 +362,32 @@ document.getElementById('pickFile').addEventListener('click',async()=>{
 });
 
 /* ==========================================================
+   STEP 3 — notes file picker (optional)
+   ========================================================== */
+document.getElementById('pickNotes').addEventListener('click', async () => {
+  try {
+    [notesHandle] = await window.showOpenFilePicker({
+      id: 'notes-file',
+      startIn: dirHandle || 'documents',
+      types: [{ description: 'XHTML/HTML', accept: { 'text/html': ['.xhtml', '.html'] } }],
+      multiple: false
+    });
+    notesFileName = notesHandle.name;
+    document.getElementById('notesBtnText').textContent = notesFileName;
+    document.getElementById('pickNotes').classList.add('selected');
+    document.getElementById('step3').classList.add('done');
+    document.getElementById('pickFile').disabled = false;
+    const st = document.getElementById('notesStatus');
+    st.textContent = 'Notes file ready — now pick index file';
+    st.className = 'step-status ok';
+    document.getElementById('notesCheck').classList.add('visible');
+    checkReady();
+  } catch(e) {
+    if (e.name !== 'AbortError') toast('Error: ' + e.message, 'error');
+  }
+});
+
+/* ==========================================================
    FILE / ESCAPING HELPERS
    ========================================================== */
 async function readFile(h){return await(await h.getFile()).text();}
@@ -276,6 +410,42 @@ async function buildAnchorMap(onProgress){
     await new Promise(r=>requestAnimationFrame(r)); // let the progress bar paint
   }
   return map;
+}
+
+/* Build footnote anchor map from the notes file: "pageNum:fnNum" -> anchorId */
+async function buildNotesAnchorMap() {
+  if (!notesHandle) return {};
+  const content = await readFile(notesHandle);
+
+  // Parse pagebreaks in notes file in order
+  const pagebreakRe = /<[^>]+\bid="page_(\d+)"[^>]*>/gi;
+  const pagebreaks = []; // [{page: "222", index: N}]
+  let pb;
+  while ((pb = pagebreakRe.exec(content)) !== null) {
+    pagebreaks.push({ page: pb[1], index: pb.index });
+  }
+
+  // For each fn anchor, record which page it falls after
+  const fnRe = /<a\s+id="([^"]+)"/gi;
+  const fnAnchors = []; // [{id, index, fnNum}]
+  let fa;
+  while ((fa = fnRe.exec(content)) !== null) {
+    const numMatch = /(\d+)$/.exec(fa[1]);
+    if (numMatch) fnAnchors.push({ id: fa[1], index: fa.index, fnNum: numMatch[1] });
+  }
+
+  // Build final map: "pageNum:fnNum" -> anchorId  e.g. "222:1" -> "ch9-fn1"
+  const preciseMap = {};
+  for (const fn of fnAnchors) {
+    // find the last pagebreak before this fn anchor
+    let page = null;
+    for (const p of pagebreaks) {
+      if (p.index < fn.index) page = p.page;
+      else break;
+    }
+    if (page) preciseMap[`${page}:${fn.fnNum}`] = fn.id;
+  }
+  return preciseMap;
 }
 
 /* Extract unique numbers from inside a <p> tag's text content (ignores existing links) */
@@ -305,12 +475,38 @@ function collectCandidates(content, anchorMap){
 
     // mask existing <a>...</a> so already-linked numbers are skipped
     const masked2=inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, m=>' '.repeat(m.length));
+
+    // Detect footnote refs like 214n.15 or 231n.18
+    const FN_RE = /\b(\d+)n\.(\d+)\b/g;
+    FN_RE.lastIndex = 0;
+    let fn;
+    while ((fn = FN_RE.exec(masked2)) !== null) {
+      const fullMatch = fn[0];       // "214n.15"
+      const pageNum = fn[1];         // "214"
+      const fnNum = fn[2];           // "15"
+      const key = `${pageNum}:${fnNum}`;
+      const anchorId = notesAnchorMap[key] || null;
+      out.push({
+        start: innerStart + fn.index,
+        end: innerStart + fn.index + fullMatch.length,
+        num: fullMatch,              // display text "214n.15"
+        id: anchorId || `fn_${pageNum}_${fnNum}`,  // fallback id for display
+        targetFile: anchorId ? notesFileName : null,
+        anchorId: anchorId,          // exact anchor id to use in href
+        isFootnote: true,
+        state: 'skipped'
+      });
+    }
+    // mask footnote refs so the plain-number regex below doesn't also
+    // pick up "214" out of "214n.15"
+    const maskedFn = masked2.replace(/\b\d+n\.\d+\b/g, m => ' '.repeat(m.length));
+
     // detect ranges like "63-5", "63–5", "63—5"
     const RANGE_RE=/\b(\d+)\s*[-–—]\s*(\d+)\b/g;
     const rangePositions=[];
     let rr;
     RANGE_RE.lastIndex=0;
-    while((rr=RANGE_RE.exec(masked2))!==null){
+    while((rr=RANGE_RE.exec(maskedFn))!==null){
       const startNum=rr[1], endShort=rr[2];
       const fullEnd=endShort.length<startNum.length
         ? startNum.slice(0,startNum.length-endShort.length)+endShort
@@ -338,7 +534,7 @@ function collectCandidates(content, anchorMap){
 
     let nm;
     NUM_RE.lastIndex=0;
-    while((nm=NUM_RE.exec(masked2))!==null){
+    while((nm=NUM_RE.exec(maskedFn))!==null){
       // skip if this position is inside a detected range
       const pos=nm.index;
       if(rangePositions.some(([s,e])=>pos>=s&&pos<e)) continue;
@@ -387,6 +583,43 @@ function collectCandidates(content, anchorMap){
   return out;
 }
 
+/* Scan srcContent for ONLY \d+n\.\d+ footnote refs — no anchorMap needed */
+function collectFootnoteCandidates(content) {
+  const out = [];
+  const P_RE_FN = /(<li\b[^>]*>)([\s\S]*?)(<\/li>)/g;
+  let pm;
+  P_RE_FN.lastIndex = 0;
+  while ((pm = P_RE_FN.exec(content)) !== null) {
+    const inner = pm[2];
+    if (!/\d+n\.\d+/.test(inner)) continue;
+    const innerStart = pm.index + pm[1].length;
+    // mask existing <a>...</a> so already-linked refs are skipped
+    const masked = inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, m => ' '.repeat(m.length));
+    const FN_RE = /\b(\d+)n\.(\d+)\b/g;
+    let fn;
+    FN_RE.lastIndex = 0;
+    while ((fn = FN_RE.exec(masked)) !== null) {
+      const fullMatch = fn[0];
+      const pageNum = fn[1];
+      const fnNum = fn[2];
+      const key = `${pageNum}:${fnNum}`;
+      const anchorId = notesAnchorMap[key] || null;
+      out.push({
+        start: innerStart + fn.index,
+        end: innerStart + fn.index + fullMatch.length,
+        num: fullMatch,
+        id: anchorId || `fn_${pageNum}_${fnNum}`,
+        targetFile: anchorId ? notesFileName : null,
+        anchorId: anchorId,
+        isFootnote: true,
+        state: 'skipped'
+      });
+    }
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
+}
+
 /* ==========================================================
    AUTO-SAFETY RULES
    ========================================================== */
@@ -423,6 +656,45 @@ function buildOutput(){
   }
   out+=srcContent.slice(last);
   return {text:out,linked,forcedNoAnchor};
+}
+
+/* ==========================================================
+   SEE-ALSO — resolve a text selection to a stable srcContent
+   offset so applying links never depends on runtime regex
+   search over already-mutated output.
+   ========================================================== */
+function findLiRangeById(id){
+  const re=/<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
+  let m;
+  while((m=re.exec(srcContent))!==null){
+    const idMatch=/\bid="([^"]+)"/.exec(m[1]);
+    if(idMatch&&idMatch[1]===id){
+      return {start:m.index,end:m.index+m[0].length};
+    }
+  }
+  return null;
+}
+function isInsideExistingAnchor(pos){
+  // Scan backwards from pos to find the nearest <a ...> or </a>
+  // Only look back up to 2000 chars for performance
+  const window = srcContent.slice(Math.max(0, pos-2000), pos);
+  const lastOpen = window.lastIndexOf('<a ');
+  const lastClose = window.lastIndexOf('</a>');
+  // If the most recent tag before pos is an opening <a, we're inside it
+  return lastOpen > lastClose;
+}
+function findSeeAlsoOffset(selectedText, targetId){
+  const liRange=findLiRangeById(targetId);
+  let idx=0;
+  while(true){
+    const found=srcContent.indexOf(selectedText, idx);
+    if(found===-1) return null;
+    const end=found+selectedText.length;
+    const insideAnchor=isInsideExistingAnchor(found);
+    const insideTargetLi=liRange&&found>=liRange.start&&found<liRange.end;
+    if(!insideAnchor&&!insideTargetLi) return {srcStart:found,srcEnd:end};
+    idx=found+1;
+  }
 }
 
 /* ==========================================================
@@ -649,7 +921,9 @@ function cycleState(span){
     return;
   }
   // normal toggle
+  const prevState=c.state;
   c.state = c.state==='linked' ? 'skipped' : 'linked';
+  pushHistory({type:'cycleState', i, prevState});
   paintSpan(i);
   updateSelCount();
   updateStats(false);
@@ -681,6 +955,7 @@ function showManualAnchorPopup(candIndex){
     btn.addEventListener('click',()=>{
       const fname=btn.dataset.file;
       overlay.remove();
+      pushHistory({type:'manualAnchor', candIndex, prevTargetFile:c.targetFile, prevState:c.state});
       c.targetFile=fname;
       c.state='manual';
       manualAnchorMap[c.id]=fname;
@@ -721,6 +996,7 @@ function showManualEditPopup(candIndex){
 
   overlay.querySelector('.manual-action-delete').addEventListener('click',()=>{
     overlay.remove();
+    pushHistory({type:'manualAnchor', candIndex, prevTargetFile:c.targetFile, prevState:c.state});
     c.targetFile=null;
     c.state='noanchor';
     delete manualAnchorMap[c.id];
@@ -779,7 +1055,8 @@ function renderTable(onlyApplied){
     note.hidden=idx.length<=MAX_ROWS;
   }
   const sub=document.getElementById('tableSub');
-  if(sub) sub.textContent=`${idx.length.toLocaleString()} ${onlyApplied?'applied':'detected'}`;
+  const saCount=onlyApplied?seeAlsoLinks.filter(s=>s.applied).length:seeAlsoLinks.length;
+  if(sub) sub.textContent=`${(idx.length+saCount).toLocaleString()} ${onlyApplied?'applied':'detected'}`;
   icons();
 }
 
@@ -962,13 +1239,60 @@ function toggleAnchorOnly(on){
 }
 
 function applySelected(){
-  const {text,linked,forcedNoAnchor}=buildOutput();
-  fixedContent=text;
+  const {linked,forcedNoAnchor}=buildOutput();
+
+  // Merge page-number candidates and see-also links into one
+  // left-to-right pass over the untouched srcContent, so offsets
+  // never collide with each other's replacements.
+  const segs=[];
+  for(const c of candidates){
+    if(c.state!=='linked' && c.state!=='manual') continue;
+    if(!c.targetFile) continue;
+    // For footnote candidates, use anchorId directly in href
+    if (c.isFootnote) {
+      segs.push({
+        start: c.start, end: c.end,
+        html: `<a epub:type="index-locator" href="${c.targetFile}#${c.anchorId}">${c.num}</a>`
+      });
+    } else {
+      segs.push({
+        start: c.start, end: c.end,
+        html: `<a epub:type="index-locator" href="${c.targetFile}#${c.id}">${c.num}</a>`
+      });
+    }
+  }
+  for(const s of seeAlsoLinks){
+    if(s.srcStart==null){
+      s.applied=false;
+      toast(`Could not locate "${truncate(s.selectedText,30)}" in source — skipped`,'error');
+      continue;
+    }
+    segs.push({
+      start:s.srcStart,end:s.srcEnd,isSeeAlso:true,ref:s,
+      html:`<a href="#${s.targetId}">${s.selectedText}</a>`
+    });
+  }
+  segs.sort((a,b)=>a.start-b.start);
+
+  let out='',last=0;
+  for(const seg of segs){
+    if(seg.start<last) continue; // overlapping segment — skip to avoid corrupting output
+    out+=srcContent.slice(last,seg.start);
+    out+=seg.html;
+    last=seg.end;
+    if(seg.isSeeAlso) seg.ref.applied=true;
+  }
+  out+=srcContent.slice(last);
+  fixedContent=out;
+
   applied=true;
   saveBtn.disabled=false;
   copyBtn.disabled=false;
   renderTable(true);
+  renderSeeAlsoTable();
+  const seeAlsoCount=seeAlsoLinks.filter(s=>s.applied).length;
   let msg=`Applied — ${linked.toLocaleString()} link${linked===1?'':'s'} in the output`;
+  if(seeAlsoCount) msg+=`, ${seeAlsoCount} see-also link${seeAlsoCount===1?'':'s'}`;
   if(forcedNoAnchor) msg+=`, ${forcedNoAnchor} skipped (no anchor)`;
   toast(msg,'success');
 }
@@ -1036,6 +1360,31 @@ mainBody.addEventListener('focusout',e=>{
 });
 mainBody.addEventListener('scroll',()=>{ if(!tip.hidden) hideTooltip(); },true);
 
+mainBody.addEventListener('mouseup',(e)=>{
+  // if user clicks an already-zoned mark, show edit/remove popup
+  const clickedMark=e.target.closest('mark.sa-linked');
+  if(clickedMark){
+    showSeeAlsoEditPopup(clickedMark);
+    return;
+  }
+
+  // See-also selection
+  const sel=window.getSelection();
+  if(sel&&sel.toString().trim().length>1){
+    const container=document.getElementById('previewContainer');
+    if(container&&container.contains(sel.anchorNode)){
+      const selectedText=sel.toString().trim();
+      const entries=getTopLevelLiEntries();
+      if(entries.length===0) return;
+      const range=sel.getRangeAt(0);
+      const rect=range.getBoundingClientRect();
+      showSeeAlsoPopup(selectedText, entries, rect, range);
+      sel.removeAllRanges();
+      return;
+    }
+  }
+});
+
 mainBody.addEventListener('change',e=>{
   if(e.target.id==='anchorOnly'){toggleAnchorOnly(e.target.checked);return;}
   if(e.target.id==='rangeMin'||e.target.id==='rangeMax'){readRange();return;}
@@ -1073,6 +1422,267 @@ document.getElementById('applyIdBtn').addEventListener('click', async()=>{
   }
 });
 
+function showSeeAlsoEditPopup(mark){
+  document.querySelectorAll('.see-also-edit-popup').forEach(p=>p.remove());
+
+  const saI=Number(mark.dataset.saI);
+  const s=seeAlsoLinks[saI];
+  if(!s) return;
+
+  const rect=mark.getBoundingClientRect();
+  const popup=document.createElement('div');
+  popup.className='see-also-edit-popup';
+  popup.innerHTML=`
+    <div class="sa-edit-head">
+      <span class="sa-edit-text">"${truncate(s.selectedText,30)}"</span>
+      <button class="sa-edit-close">✕</button>
+    </div>
+    <div class="sa-edit-info">→ <span class="sa-id">#${s.targetId}</span></div>
+    <div class="sa-edit-actions">
+      <button class="sa-edit-btn sa-edit-change"><i data-lucide="pencil"></i> Change Target</button>
+      <button class="sa-edit-btn sa-edit-remove"><i data-lucide="trash-2"></i> Remove Link</button>
+    </div>`;
+
+  document.body.appendChild(popup);
+  icons();
+
+  const x=Math.min(rect.left+window.scrollX, window.innerWidth-260);
+  const y=rect.bottom+window.scrollY+6;
+  popup.style.left=x+'px';
+  popup.style.top=y+'px';
+
+  popup.querySelector('.sa-edit-close').addEventListener('click',()=>popup.remove());
+  document.addEventListener('mousedown',function outside(e){
+    if(!popup.contains(e.target)){popup.remove();document.removeEventListener('mousedown',outside);}
+  });
+
+  popup.querySelector('.sa-edit-change').addEventListener('click',()=>{
+    popup.remove();
+    const entries=getTopLevelLiEntries();
+    const rect2=mark.getBoundingClientRect();
+    // reuse range-like object for position
+    showSeeAlsoPopup(s.selectedText, entries, rect2, null, (targetId, targetText)=>{
+      // update the existing seeAlsoLink
+      s.targetId=targetId;
+      s.targetText=targetText;
+      s.applied=false;
+      const offset=findSeeAlsoOffset(s.selectedText, targetId);
+      s.srcStart=offset?offset.srcStart:null;
+      s.srcEnd=offset?offset.srcEnd:null;
+      mark.dataset.targetId=targetId;
+      mark.title=`→ #${targetId}`;
+      renderSeeAlsoTable();
+      if(offset){
+        toast(`Updated → #${targetId}`,'success');
+      }else{
+        toast(`Could not find "${truncate(s.selectedText,30)}" in source — see-also skipped`,'error');
+      }
+    });
+  });
+
+  popup.querySelector('.sa-edit-remove').addEventListener('click',()=>{
+    popup.remove();
+    // unwrap mark
+    const parent=mark.parentNode;
+    while(mark.firstChild) parent.insertBefore(mark.firstChild,mark);
+    parent.removeChild(mark);
+    // remove from seeAlsoLinks
+    seeAlsoLinks.splice(saI,1);
+    // update saI on remaining marks
+    document.querySelectorAll('mark.sa-linked').forEach(m=>{
+      const i=Number(m.dataset.saI);
+      if(i>saI) m.dataset.saI=i-1;
+    });
+    renderSeeAlsoTable();
+    toast('See-also link removed','success');
+  });
+}
+
+function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null){
+  document.querySelectorAll('.see-also-popup').forEach(p=>p.remove());
+
+  const popup=document.createElement('div');
+  popup.className='see-also-popup';
+  popup.innerHTML=`
+    <div class="sa-head">
+      <span class="sa-sel-text">"${truncate(selectedText,40)}"</span>
+      <button class="sa-close">✕</button>
+    </div>
+    <div class="sa-search-wrap">
+      <i data-lucide="search"></i>
+      <input type="text" class="sa-search" placeholder="Filter entries..." autocomplete="off"/>
+    </div>
+    <div class="sa-scroll">
+      <div class="sa-body" id="saBody"></div>
+    </div>`;
+
+  document.body.appendChild(popup);
+  icons();
+
+  const x=Math.min(rect.left+window.scrollX, window.innerWidth-320);
+  const y=rect.bottom+window.scrollY+6;
+  popup.style.left=x+'px';
+  popup.style.top=y+'px';
+
+  const fuse=new Fuse(entries,{
+    keys:['text'],
+    threshold:0.4,
+    distance:200,
+    includeScore:true,
+    minMatchCharLength:2
+  });
+
+  function makeBtn(e, isFuzzy){
+    return `<button class="sa-item${isFuzzy?' sa-best':''}"
+      data-id="${e.id}"
+      data-text="${e.text.replace(/"/g,'&quot;')}">
+      <span class="sa-item-text">${e.text.length>55?e.text.slice(0,55)+'…':e.text}</span>
+      <span class="sa-id">#${e.id}</span>
+    </button>`;
+  }
+
+  function makeDivider(){ return `<div class="sa-divider"></div>`; }
+  function makeLetterHead(letter){ return `<div class="sa-letter">${letter}</div>`; }
+
+  function renderLists(filter){
+    const query=filter||selectedText;
+    const fuzzyResults=fuse.search(query);
+    const fuzzyIds=new Set(fuzzyResults.map(r=>r.item.id));
+    const fl=(filter||'').toLowerCase();
+
+    // starting letter of selected text
+    const startLetter=(selectedText.trim()[0]||'A').toUpperCase();
+
+    // all entries sorted A-Z, filtered by search
+    const allSorted=entries
+      .filter(e=>!fl||e.text.toLowerCase().includes(fl))
+      .sort((a,b)=>a.text.localeCompare(b.text));
+
+    // reorder: start from startLetter, wrap around
+    const startIdx=allSorted.findIndex(e=>e.text.toUpperCase()[0]>=startLetter);
+    const reordered=startIdx>0
+      ? [...allSorted.slice(startIdx), ...allSorted.slice(0,startIdx)]
+      : allSorted;
+
+    // build HTML
+    let html='';
+
+    // 1. Fuzzy section
+    if(fuzzyResults.length){
+      html+=`<div class="sa-section-label">Fuzzy Matches</div>`;
+      html+=fuzzyResults.slice(0,15).map(r=>makeBtn(r.item,true)).join('');
+    } else {
+      html+=`<div class="sa-section-label">Fuzzy Matches</div>`;
+      html+=`<div class="sa-empty">No fuzzy matches</div>`;
+    }
+
+    // 2. Divider
+    html+=makeDivider();
+
+    // 3. Alpha section grouped by letter, starting from startLetter
+    let currentLetter='';
+    for(const e of reordered){
+      const letter=(e.text[0]||'').toUpperCase();
+      if(letter!==currentLetter){
+        currentLetter=letter;
+        html+=makeLetterHead(letter);
+      }
+      html+=makeBtn(e, fuzzyIds.has(e.id));
+    }
+
+    document.getElementById('saBody').innerHTML=html;
+    icons();
+  }
+
+  renderLists('');
+
+  popup.querySelector('.sa-search').addEventListener('input',e=>renderLists(e.target.value));
+  popup.querySelector('.sa-close').addEventListener('click',()=>popup.remove());
+  document.addEventListener('mousedown',function outside(e){
+    if(!popup.contains(e.target)){popup.remove();document.removeEventListener('mousedown',outside);}
+  });
+
+  popup.addEventListener('click',e=>{
+    const btn=e.target.closest('.sa-item');
+    if(!btn) return;
+    popup.remove();
+    if(onPick){
+      onPick(btn.dataset.id, btn.dataset.text);
+    } else {
+      applySeeAlsoLink(selectedText, btn.dataset.id, btn.dataset.text, range);
+    }
+  });
+
+  requestAnimationFrame(()=>{
+    const first=popup.querySelector('.sa-best');
+    if(first) first.scrollIntoView({block:'nearest'});
+    popup.querySelector('.sa-search').focus();
+  });
+}
+
+function applySeeAlsoLink(selectedText, targetId, targetText, range){
+  // Record in seeAlsoLinks array for later apply
+  const saIndex=seeAlsoLinks.length;
+  const offset=findSeeAlsoOffset(selectedText, targetId);
+  seeAlsoLinks.push({
+    selectedText, targetId, targetText, applied:false,
+    srcStart: offset?offset.srcStart:null,
+    srcEnd: offset?offset.srcEnd:null
+  });
+  pushHistory({type:'seeAlso', saIndex});
+
+  if(!offset){
+    toast(`Could not find "${truncate(selectedText,30)}" in source — see-also skipped`,'error');
+  }
+
+  // Visually wrap the selection in a green highlight span
+  try{
+    const mark=document.createElement('mark');
+    mark.className='sa-linked';
+    mark.dataset.saI=seeAlsoLinks.length-1;
+    mark.dataset.targetId=targetId;
+    mark.title=`→ #${targetId}`;
+    range.surroundContents(mark);
+  }catch(e){
+    // surroundContents fails across tags — use extractContents
+    const frag=range.extractContents();
+    const mark=document.createElement('mark');
+    mark.className='sa-linked';
+    mark.dataset.saI=seeAlsoLinks.length-1;
+    mark.dataset.targetId=targetId;
+    mark.title=`→ #${targetId}`;
+    mark.appendChild(frag);
+    range.insertNode(mark);
+  }
+
+  // Add to fixes table
+  renderSeeAlsoTable();
+  if(offset) toast(`Linked "${truncate(selectedText,30)}" → #${targetId}`,'success');
+}
+
+function renderSeeAlsoTable(){
+  // append see-also rows to fixBody
+  const tbody=document.getElementById('fixBody');
+  if(!tbody) return;
+  // remove old sa rows
+  tbody.querySelectorAll('tr.sa-row').forEach(r=>r.remove());
+  for(let i=0;i<seeAlsoLinks.length;i++){
+    const s=seeAlsoLinks[i];
+    const tr=document.createElement('tr');
+    tr.className='sa-row';
+    tr.dataset.saI=i;
+    tr.innerHTML=
+      `<td class="cell-num">${truncate(s.selectedText,20)}</td>`+
+      `<td class="cell-mono">#${s.targetId}</td>`+
+      `<td class="cell-mono">${truncate(s.targetText,20)}</td>`+
+      `<td>${(s.srcStart==null||s.applied===false)
+        ?'<span class="pill pill-warn"><i data-lucide="alert-triangle"></i>Not Found</span>'
+        :'<span class="pill pill-manual"><i data-lucide="link"></i>See Also</span>'}</td>`;
+    tbody.appendChild(tr);
+  }
+  icons();
+}
+
 /* ==========================================================
    RUN — scan, then hand over to review
    ========================================================== */
@@ -1092,6 +1702,7 @@ runBtn.addEventListener('click',async()=>{
     const anchorMap=await buildAnchorMap((done,total,fname)=>{
       setProgress(done,total,`${done}/${total} · ${fname}`);
     });
+    notesAnchorMap=await buildNotesAnchorMap();
     setProgress(1,1,'Detecting numbers');
     srcContent=await readFile(fileHandle);
     candidates=collectCandidates(srcContent,anchorMap);
@@ -1123,6 +1734,63 @@ runBtn.addEventListener('click',async()=>{
   const doneIcon=runBtn.querySelector('svg,i');
   if(doneIcon) doneIcon.classList.remove('spin');
   runBtnText.textContent='Scan & Fix';
+  checkReady();
+});
+
+/* ==========================================================
+   FOOTNOTE SCAN — independent of the folder/anchor-map scan;
+   only needs the index file + notes file.
+   ========================================================== */
+fnRunBtn.addEventListener('click', async () => {
+  fnRunBtn.disabled = true;
+  fnRunBtnText.textContent = 'Scanning...';
+  const spinIcon = fnRunBtn.querySelector('svg,i');
+  if (spinIcon) spinIcon.classList.add('spin');
+  showSkeletons();
+  showProgress('Reading notes file');
+  saveBtn.disabled = true;
+  copyBtn.disabled = true;
+  applied = false;
+  fixedContent = '';
+  seeAlsoLinks = [];
+  hideTooltip();
+  try {
+    notesAnchorMap = await buildNotesAnchorMap();
+    setProgress(1, 1, 'Detecting footnote refs');
+    srcContent = await readFile(fileHandle);
+    candidates = collectFootnoteCandidates(srcContent);
+    // auto-link those with a found anchor, mark rest as noanchor
+    for (const c of candidates) {
+      c.state = c.targetFile ? 'linked' : 'noanchor';
+    }
+    hideProgress();
+    summaryBar.hidden = false;
+    updateStats(true);
+    renderResults();
+    const linked = candidates.filter(c => c.state === 'linked').length;
+    const missing = candidates.filter(c => c.state === 'noanchor').length;
+    toast(
+      `${candidates.length} footnote ref(s) found — ${linked} ready to link` +
+      (missing ? `, ${missing} anchor missing` : '') +
+      '. Review, then Apply Selected.',
+      'success', 4200
+    );
+  } catch (e) {
+    hideProgress();
+    console.error(e);
+    toast('Error: ' + e.message, 'error');
+    summaryBar.hidden = true;
+    mainBody.innerHTML = `
+      <div class="empty-state is-error">
+        <span class="empty-icon"><i data-lucide="alert-triangle"></i></span>
+        <h2>Scan failed</h2>
+        <p>${esc(e.message)}</p>
+      </div>`;
+    icons();
+  }
+  const doneIcon = fnRunBtn.querySelector('svg,i');
+  if (doneIcon) doneIcon.classList.remove('spin');
+  fnRunBtnText.textContent = 'Scan Footnotes';
   checkReady();
 });
 
