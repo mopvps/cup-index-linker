@@ -60,6 +60,8 @@ document.getElementById('romanToggle').addEventListener('change', e => {
   romanMode = e.target.checked;
 });
 
+document.getElementById('idPrefixInput').addEventListener('input', checkIdReady);
+
 /* ==========================================================
    STATE
    ========================================================== */
@@ -93,6 +95,10 @@ const runBtn=document.getElementById('runBtn'),
       copyBtn=document.getElementById('copyBtn');
 
 function checkReady(){runBtn.disabled=!(dirHandle&&fileHandle);}
+function checkIdReady(){
+  const prefix=document.getElementById('idPrefixInput').value.trim();
+  document.getElementById('applyIdBtn').disabled=!(dirHandle&&fileHandle&&prefix);
+}
 
 /* ==========================================================
    TOOLTIP — one element, a direct child of <body> so that no
@@ -221,6 +227,7 @@ document.getElementById('pickFolder').addEventListener('click',async()=>{
     st.className='step-status ok';
     document.getElementById('pickFile').disabled=false;
     checkReady();
+    checkIdReady();
   }catch(e){if(e.name!=='AbortError')toast('Error: '+e.message,'error');}
 });
 
@@ -242,6 +249,7 @@ document.getElementById('pickFile').addEventListener('click',async()=>{
     st.textContent='Ready to scan';
     st.className='step-status ok';
     checkReady();
+    checkIdReady();
   }catch(e){if(e.name!=='AbortError')toast('Error: '+e.message,'error');}
 });
 
@@ -1031,6 +1039,38 @@ mainBody.addEventListener('scroll',()=>{ if(!tip.hidden) hideTooltip(); },true);
 mainBody.addEventListener('change',e=>{
   if(e.target.id==='anchorOnly'){toggleAnchorOnly(e.target.checked);return;}
   if(e.target.id==='rangeMin'||e.target.id==='rangeMax'){readRange();return;}
+});
+
+document.getElementById('applyIdBtn').addEventListener('click', async()=>{
+  if(!fileHandle){ toast('Pick an index file first','error'); return; }
+  const rawPrefix=document.getElementById('idPrefixInput').value.trim();
+  if(!rawPrefix){ toast('Enter an ID prefix first','error'); return; }
+
+  try{
+    let content=await readFile(fileHandle);
+    // remove existing id attributes from <li> tags
+    content=content.replace(/<li(\s[^>]*?)?\s+id="[^"]*"/gi, (m,attrs)=>{
+      return '<li'+(attrs||'');
+    });
+    // assign new sequential IDs to all <li> tags
+    let counter=1;
+    content=content.replace(/<li(\b[^>]*)?>/gi,(m,attrs)=>{
+      const id=`${rawPrefix}${String(counter++).padStart(4,'0')}`;
+      if(attrs){
+        // remove any leftover id attr just in case
+        attrs=attrs.replace(/\s+id="[^"]*"/,'');
+        return `<li${attrs} id="${id}">`;
+      }
+      return `<li id="${id}">`;
+    });
+    // save file
+    const writable=await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    toast(`IDs applied: ${counter-1} <li> tags updated`,'success');
+  }catch(e){
+    toast('Error: '+e.message,'error');
+  }
 });
 
 /* ==========================================================

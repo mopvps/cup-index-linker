@@ -1303,3 +1303,36 @@ span.manual{
   margin-top: 2px;
   list-style: circle;
 }
+
+/* ID prefix input */
+.id-prefix-wrap{
+  display:flex;align-items:center;gap:0;
+  border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--surface);overflow:hidden;
+  transition:border-color .18s;
+}
+.id-prefix-wrap:focus-within{border-color:var(--accent);box-shadow:var(--ring);}
+.id-prefix-hash{
+  padding:0 8px;font-size:var(--fs-13);color:var(--muted);
+  background:var(--surface-2);border-right:1px solid var(--border);
+  height:36px;display:flex;align-items:center;
+}
+.id-prefix-input{
+  flex:1;border:none;outline:none;background:transparent;
+  padding:0 10px;height:36px;font-size:var(--fs-13);
+  font-family:'JetBrains Mono',monospace;color:var(--text);
+}
+
+/* Apply IDs button */
+.btn-apply-id{
+  display:flex;align-items:center;justify-content:center;gap:var(--s2);
+  width:100%;padding:10px;border-radius:var(--r);border:none;cursor:pointer;
+  background:var(--surface-2);color:var(--text-2);
+  font-size:var(--fs-13);font-weight:600;
+  border:1px solid var(--border);
+  transition:background .18s,color .18s;
+}
+.btn-apply-id:hover:not(:disabled){
+  background:var(--accent-soft);color:var(--accent);border-color:var(--accent);
+}
+.btn-apply-id:disabled{opacity:.45;cursor:not-allowed;}

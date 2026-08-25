@@ -60,6 +60,20 @@
         <div class="step-status" id="fileStatus">File with plain page numbers</div>
       </div>
 
+      <!-- STEP 3 — Apply IDs -->
+      <div class="step" id="step3">
+        <div class="step-head">
+          <span class="step-num">3</span>
+          <span class="step-title">ID Prefix</span>
+        </div>
+        <div class="id-prefix-wrap">
+          <span class="id-prefix-hash">#</span>
+          <input type="text" id="idPrefixInput" class="id-prefix-input"
+                 placeholder="e.g. bm_ind" autocomplete="off" spellcheck="false"/>
+        </div>
+        <div class="step-status" id="idPrefixStatus">e.g. bm_ind → bm_ind0001</div>
+      </div>
+
     </div>
 
     <div class="sidebar-foot">
@@ -73,6 +87,11 @@
           <div class="progress-fill" id="progressFill"></div>
         </div>
       </div>
+
+      <button class="btn-apply-id" id="applyIdBtn" disabled>
+        <i data-lucide="tag"></i>
+        <span>Apply IDs</span>
+      </button>
 
       <label class="switch roman-toggle">
         <input type="checkbox" id="romanToggle"/>
