@@ -32,7 +32,8 @@
         <img src="logo.webp" alt="VilPower Logo" class="brand-logo" />
       </div>
 
-      <div class="steps">
+      <!-- TAB 1 SIDEBAR (Pagebreak) -->
+      <div class="steps" id="pbSidebar">
 
         <!-- STEP 1 -->
         <div class="step" id="step1">
@@ -64,25 +65,10 @@
           <div class="step-status" id="fileStatus">File with plain page numbers</div>
         </div>
 
-        <!-- STEP 3 -->
-        <div class="step" id="step3">
-          <div class="step-head">
-            <span class="step-num">3</span>
-            <span class="step-title">Select Notes File</span>
-            <span class="step-check" id="notesCheck"><i data-lucide="check"></i></span>
-          </div>
-          <button class="step-btn" id="pickNotes">
-            <i data-lucide="file-text" class="lg"></i>
-            <span class="step-btn-text" id="notesBtnText">Choose File</span>
-            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
-          </button>
-          <div class="step-status" id="notesStatus">Optional — xhtml file containing footnotes</div>
-        </div>
-
         <!-- STEP 4 — Apply IDs -->
         <div class="step" id="step4">
           <div class="step-head">
-            <span class="step-num">4</span>
+            <span class="step-num">3</span>
             <span class="step-title">ID Prefix</span>
           </div>
           <div class="id-prefix-wrap">
@@ -91,20 +77,6 @@
               spellcheck="false" />
           </div>
           <div class="step-status" id="idPrefixStatus">e.g. bm_ind → bm_ind0001</div>
-        </div>
-
-      </div>
-
-      <div class="sidebar-foot">
-
-        <div class="progress-wrap" id="progressWrap" hidden>
-          <div class="progress-label">
-            <span id="progressText">Mapping anchors</span>
-            <span id="progressPct">0%</span>
-          </div>
-          <div class="progress-track" role="progressbar" aria-labelledby="progressText">
-            <div class="progress-fill" id="progressFill"></div>
-          </div>
         </div>
 
         <button class="btn-apply-id" id="applyIdBtn" disabled>
@@ -118,15 +90,64 @@
           <span>Roman Letter Detection</span>
         </label>
 
+        <button class="btn-run btn-scan" id="runBtn" disabled>
+          <i data-lucide="scan-search"></i>
+          <span id="runBtnText">Scan &amp; Fix</span>
+        </button>
+
+      </div><!-- /pbSidebar -->
+
+      <!-- TAB 2 SIDEBAR (Footnote) -->
+      <div class="steps" id="fnSidebar" hidden>
+
+        <!-- STEP 1 -->
+        <div class="step" id="fn_step1">
+          <div class="step-head">
+            <span class="step-num">1</span>
+            <span class="step-title">Select Notes File</span>
+            <span class="step-check" id="fn_notesCheck"><i data-lucide="check"></i></span>
+          </div>
+          <button class="step-btn" id="fn_pickNotes">
+            <i data-lucide="file-text" class="lg"></i>
+            <span class="step-btn-text" id="fn_notesBtnText">Choose File</span>
+            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+          </button>
+          <div class="step-status" id="fn_notesStatus">xhtml file containing footnotes</div>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="step" id="fn_step2">
+          <div class="step-head">
+            <span class="step-num">2</span>
+            <span class="step-title">Select Index File</span>
+            <span class="step-check" id="fn_fileCheck"><i data-lucide="check"></i></span>
+          </div>
+          <button class="step-btn" id="fn_pickFile">
+            <i data-lucide="file-code" class="lg"></i>
+            <span class="step-btn-text" id="fn_fileBtnText">Choose File</span>
+            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+          </button>
+          <div class="step-status" id="fn_fileStatus">File with footnote refs (e.g. 214n.15)</div>
+        </div>
+
         <button class="btn-run btn-fn-scan" id="fnRunBtn" disabled>
           <i data-lucide="file-search"></i>
           <span id="fnRunBtnText">Scan Footnotes</span>
         </button>
 
-        <button class="btn-run btn-scan" id="runBtn" disabled>
-          <i data-lucide="scan-search"></i>
-          <span id="runBtnText">Scan &amp; Fix</span>
-        </button>
+      </div><!-- /fnSidebar -->
+
+      <div class="sidebar-foot">
+
+        <div class="progress-wrap" id="progressWrap" hidden>
+          <div class="progress-label">
+            <span id="progressText">Mapping anchors</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-track" role="progressbar" aria-labelledby="progressText">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
 
         <button class="theme-btn" id="themeToggle" aria-label="Toggle color theme">
           <i data-lucide="moon" id="themeIcon"></i>
@@ -143,6 +164,9 @@
       <div class="tab-bar">
         <button class="tab-btn active" id="tabBtn1" data-tab="1">
           <i data-lucide="link-2"></i><span>Pagebreak Fixer</span>
+        </button>
+        <button class="tab-btn" id="tabBtn2" data-tab="2">
+          <i data-lucide="file-search"></i><span>Footnote Linker</span>
         </button>
       </div>
 
@@ -188,12 +212,52 @@
 
       </div><!-- /tabPane1 -->
 
+      <!-- ============ TAB 2 PANE ============ -->
+      <div class="tab-pane" id="tabPane2" hidden>
+
+        <!-- summary bar -->
+        <div class="summary-bar" id="fn_summaryBar" hidden>
+          <div class="stat total">
+            <span class="stat-num" id="fn_cTotal">0</span>
+            <span class="stat-label">Refs Found</span>
+          </div>
+          <div class="stat pass">
+            <span class="stat-num" id="fn_cFixed">0</span>
+            <span class="stat-label">Linked</span>
+          </div>
+          <div class="stat fail">
+            <span class="stat-num" id="fn_cNotFound">0</span>
+            <span class="stat-label">Anchor Missing</span>
+          </div>
+          <div class="summary-actions">
+            <button class="btn-ghost" id="fn_copyBtn" disabled><i data-lucide="copy"></i><span>Copy</span></button>
+            <button class="btn-save" id="fn_saveBtn" disabled><i data-lucide="save"></i><span>Save File</span></button>
+          </div>
+        </div>
+
+        <!-- results / empty state -->
+        <div class="main-body" id="fn_mainBody">
+          <div class="empty-state">
+            <span class="empty-icon"><i data-lucide="file-search"></i></span>
+            <h2>Nothing scanned yet</h2>
+            <p>Pick the notes file containing footnotes, then pick the index file
+              with footnote refs like <code>214n.15</code>. Scan links each ref to its footnote anchor.</p>
+            <span class="empty-hint">
+              <i data-lucide="arrow-left"></i> Start with step 1 in the sidebar
+            </span>
+          </div>
+        </div>
+
+      </div><!-- /tabPane2 -->
+
     </main>
   </div>
 
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
-  <script src="script.js"></script>
+  <script src="shared.js"></script>
+  <script src="pagebreak.js"></script>
+  <script src="footnote.js"></script>
 </body>
 
 </html>

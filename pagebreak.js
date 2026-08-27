@@ -1,99 +1,38 @@
-/* ==========================================================
-   ICONS — re-render lucide after any dynamic DOM insert
-   ========================================================== */
-function icons(){
-  if(window.lucide&&window.lucide.createIcons) window.lucide.createIcons();
-}
-icons();
+'use strict';
 
-/* ==========================================================
-   TOASTS
-   ========================================================== */
-const toastStack=document.getElementById('toastStack');
-function toast(msg,type='success',ms=3200){
-  const el=document.createElement('div');
-  el.className='toast '+type;
-  el.setAttribute('role',type==='error'?'alert':'status');
-  el.innerHTML=`<span class="t-icon"><i data-lucide="${type==='error'?'alert-triangle':'check-circle-2'}"></i></span>
-                <span class="t-msg"></span>`;
-  el.querySelector('.t-msg').textContent=msg;
-  toastStack.appendChild(el);
-  icons();
-  const kill=()=>{
-    if(el.dataset.dying) return;
-    el.dataset.dying='1';
-    el.classList.add('out');
-    el.addEventListener('animationend',()=>el.remove(),{once:true});
-    setTimeout(()=>el.remove(),500);
-  };
-  const t=setTimeout(kill,ms);
-  el.addEventListener('click',()=>{clearTimeout(t);kill();});
-}
-
-/* ==========================================================
-   THEME (persisted in localStorage)
-   ========================================================== */
-const html=document.documentElement,
-      themeBtn=document.getElementById('themeToggle'),
-      themeLabel=document.getElementById('themeLabel');
-
-function applyTheme(dark){
-  html.setAttribute('data-theme',dark?'dark':'light');
-  themeLabel.textContent=dark?'Light mode':'Dark mode';
-  // lucide swaps <i> for <svg>, so replace the node with a fresh <i> each time
-  const old=document.getElementById('themeIcon');
-  const fresh=document.createElement('i');
-  fresh.id='themeIcon';
-  fresh.setAttribute('data-lucide',dark?'sun':'moon');
-  old.replaceWith(fresh);
-  icons();
-}
-applyTheme(localStorage.getItem('theme')==='dark');
-
-themeBtn.addEventListener('click',()=>{
-  const dark=html.getAttribute('data-theme')!=='dark';
-  applyTheme(dark);
-  localStorage.setItem('theme',dark?'dark':'light');
-});
-
-document.getElementById('romanToggle').addEventListener('change', e => {
-  romanMode = e.target.checked;
-});
-
-document.getElementById('idPrefixInput').addEventListener('input', checkIdReady);
+function initPagebreak(){
 
 /* ==========================================================
    STATE
    ========================================================== */
-let dirHandle=null,fileHandle=null,fileHandles={},fixedContent='';
-let notesHandle=null;   // the user-selected notes xhtml file
-let notesFileName='';   // just the filename e.g. "24_894AR_bm1.xhtml"
-let notesAnchorMap={};  // "pageNum:fnNum" -> anchorId  e.g. "222:1" -> "ch9-fn1"
+let pb_dirHandle=null, pb_fileHandle=null, pb_fileHandles={}, pb_fixedContent='';
+let pb_srcContent='', pb_candidates=[], pb_anchorOnly=true;
+let pb_manualAnchorMap={}, pb_seeAlsoLinks=[];
+let pb_rangeMin=null, pb_rangeMax=null, pb_applied=false, pb_romanMode=false;
+const pb_history=[], PB_MAX_HISTORY=50;
 
-/* review state.
-   Each candidate carries state: 'linked' | 'skipped' | 'noanchor'
-   - linked   -> will become <a href="target#id">num</a>
-   - skipped  -> stays a plain number
-   - noanchor -> no matching pagebreak anchor exists; stays plain */
-let srcContent='';
-let candidates=[];
-let anchorOnly=true;
-let manualAnchorMap={}; // id -> fname for manually assigned anchors
-let seeAlsoLinks=[]; // [{start,end,text,targetId,targetText}]
-const history=[];  // undo stack
-const MAX_HISTORY=50;
+// crop-select state
+let pb_cropMode=false, pb_cropDragging=false, pb_cropStartX=0, pb_cropStartY=0;
+let pb_cropRectEl=null, pb_cropContainerEl=null;
+
+const pb_runBtn=document.getElementById('runBtn'),
+      pb_runBtnText=document.getElementById('runBtnText'),
+      pb_mainBody=document.getElementById('mainBody'),
+      pb_summaryBar=document.getElementById('summaryBar'),
+      pb_saveBtn=document.getElementById('saveBtn'),
+      pb_copyBtn=document.getElementById('copyBtn');
 
 function pushHistory(action){
-  history.push(action);
-  if(history.length>MAX_HISTORY) history.shift();
+  pb_history.push(action);
+  if(pb_history.length>PB_MAX_HISTORY) pb_history.shift();
 }
 
 function undo(){
-  if(!history.length){ toast('Nothing to undo','error'); return; }
-  const action=history.pop();
+  if(!pb_history.length){ toast('Nothing to undo','error'); return; }
+  const action=pb_history.pop();
 
   if(action.type==='cycleState'){
-    const c=candidates[action.i];
+    const c=pb_candidates[action.i];
     c.state=action.prevState;
     paintSpan(action.i);
     updateSelCount();
@@ -102,13 +41,13 @@ function undo(){
   }
 
   else if(action.type==='manualAnchor'){
-    const c=candidates[action.candIndex];
+    const c=pb_candidates[action.candIndex];
     c.targetFile=action.prevTargetFile;
     c.state=action.prevState;
     if(action.prevState==='manual'){
-      manualAnchorMap[c.id]=action.prevTargetFile;
+      pb_manualAnchorMap[c.id]=action.prevTargetFile;
     } else {
-      delete manualAnchorMap[c.id];
+      delete pb_manualAnchorMap[c.id];
     }
     paintSpan(action.candIndex);
     updateSelCount();
@@ -117,9 +56,7 @@ function undo(){
   }
 
   else if(action.type==='seeAlso'){
-    // remove last seeAlsoLinks entry
-    seeAlsoLinks.splice(action.saIndex,1);
-    // remove the <mark> from preview
+    pb_seeAlsoLinks.splice(action.saIndex,1);
     const mark=document.querySelector(`.sa-linked[data-sa-i="${action.saIndex}"]`);
     if(mark){
       const parent=mark.parentNode;
@@ -129,78 +66,161 @@ function undo(){
     renderSeeAlsoTable();
     toast('Undone: see-also link','success');
   }
+
+  else if(action.type==='cropBulk'){
+    action.indices.forEach((i,idx)=>{
+      const c=pb_candidates[i];
+      if(!c) return;
+      c.state=action.prevStates[idx];
+      paintSpan(i);
+    });
+    updateSelCount();
+    updateStats(false);
+    toast('Undone: bulk crop action','success');
+  }
 }
 
-// Ctrl+Z listener
+// Ctrl+Z listener (scoped to tab 1 only)
 document.addEventListener('keydown',e=>{
+  if(document.getElementById('tabPane1').hidden) return;
   if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){
     e.preventDefault();
     undo();
   }
 });
-let rangeMin=null,rangeMax=null;
-let applied=false;
-let romanMode=false;
-const ROMAN_LIST = new Set([
-  'i','ii','iii','iv','v','vi','vii','viii','ix','x',
-  'xi','xii','xiii','xiv','xv','xvi','xvii','xviii','xix','xx',
-  'xxi','xxii','xxiii','xxiv','xxv','xxx','xl','l',
-  'I','II','III','IV','V','VI','VII','VIII','IX','X',
-  'XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX',
-  'XXI','XXII','XXIII','XXIV','XXV','XXX','XL','L'
-]);
-const runBtn=document.getElementById('runBtn'),
-      runBtnText=document.getElementById('runBtnText'),
-      mainBody=document.getElementById('mainBody'),
-      summaryBar=document.getElementById('summaryBar'),
-      saveBtn=document.getElementById('saveBtn'),
-      copyBtn=document.getElementById('copyBtn');
-const fnRunBtn=document.getElementById('fnRunBtn'),
-      fnRunBtnText=document.getElementById('fnRunBtnText');
+
+/* ==========================================================
+   CROP SELECT — Alt+C toggles a drag-to-select rectangle over
+   the preview that bulk-links or bulk-unlinks the numbers it covers.
+   ========================================================== */
+function getCropIndicator(){
+  let el=document.getElementById('cropIndicator');
+  if(!el){
+    el=document.createElement('div');
+    el.id='cropIndicator';
+    el.hidden=true;
+    el.textContent='✂ Crop Mode  ·  Alt+C to exit  ·  Esc to cancel selection';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function activateCropMode(){
+  pb_cropMode=true;
+  document.body.classList.add('crop-mode');
+  getCropIndicator().hidden=false;
+  toast('Crop mode ON — drag to select numbers','success');
+}
+function deactivateCropMode(){
+  pb_cropMode=false;
+  pb_cropDragging=false;
+  removeCropRect();
+  document.querySelectorAll('.crop-popup').forEach(p=>p.remove());
+  document.body.classList.remove('crop-mode');
+  getCropIndicator().hidden=true;
+  toast('Crop mode OFF','success');
+}
+function toggleCropMode(){
+  if(document.getElementById('tabPane1').hidden) return;
+  if(pb_cropMode) deactivateCropMode(); else activateCropMode();
+}
+function removeCropRect(){
+  if(pb_cropRectEl){ pb_cropRectEl.remove(); pb_cropRectEl=null; }
+}
+
+document.addEventListener('keydown',e=>{
+  if(document.getElementById('tabPane1').hidden) return;
+  if(e.altKey&&e.key.toLowerCase()==='c'){
+    e.preventDefault();
+    toggleCropMode();
+    return;
+  }
+  if(e.key==='Escape'&&pb_cropMode){
+    deactivateCropMode();
+  }
+});
+
+// auto-deactivate crop mode if tab 1 is hidden (tab switch away)
+(()=>{
+  const tabPane1El=document.getElementById('tabPane1');
+  if(!tabPane1El) return;
+  const cropTabObserver=new MutationObserver(()=>{
+    if(tabPane1El.hidden&&pb_cropMode) deactivateCropMode();
+  });
+  cropTabObserver.observe(tabPane1El,{attributes:true,attributeFilter:['hidden']});
+})();
+
+function showCropPopup(spans, zoneRect){
+  document.querySelectorAll('.crop-popup').forEach(p=>p.remove());
+
+  const indices=spans.map(s=>Number(s.dataset.i));
+  const noAnchorCount=indices.filter(i=>pb_candidates[i]&&pb_candidates[i].state==='noanchor').length;
+
+  const popup=document.createElement('div');
+  popup.className='crop-popup';
+  popup.innerHTML=`
+    <div class="crop-popup-label">${indices.length} number${indices.length===1?'':'s'} selected</div>
+    <div class="crop-popup-actions">
+      <button class="pill pill-pass crop-link-btn" type="button">Link</button>
+      <button class="pill pill-skip crop-unlink-btn" type="button">Unlink</button>
+      <button class="crop-close-btn" type="button" aria-label="Cancel">✕</button>
+    </div>
+    ${noAnchorCount?`<div class="crop-popup-note">${noAnchorCount} with no anchor (shown in red) will be excluded from linking</div>`:''}`;
+
+  document.body.appendChild(popup);
+  icons();
+
+  const cx=zoneRect.left+zoneRect.width/2+window.scrollX;
+  const cy=zoneRect.top+zoneRect.height/2+window.scrollY;
+  const x=Math.min(Math.max(8,cx-100), window.innerWidth-220);
+  const y=Math.max(8,cy);
+  popup.style.left=x+'px';
+  popup.style.top=y+'px';
+
+  function bulkSet(newState, verb){
+    const affected=indices.filter(i=>pb_candidates[i]&&pb_candidates[i].state!=='noanchor');
+    if(!affected.length){ toast('No linkable numbers in selection','error'); popup.remove(); return; }
+    const prevStates=affected.map(i=>pb_candidates[i].state);
+    affected.forEach(i=>{ pb_candidates[i].state=newState; });
+    affected.forEach(i=>paintSpan(i));
+    updateSelCount();
+    updateStats(false);
+    pushHistory({type:'cropBulk', indices:affected, prevStates});
+    toast(`${affected.length} number${affected.length===1?'':'s'} ${verb}`,'success');
+    popup.remove();
+  }
+
+  popup.querySelector('.crop-link-btn').addEventListener('click',()=>bulkSet('linked','linked'));
+  popup.querySelector('.crop-unlink-btn').addEventListener('click',()=>bulkSet('skipped','unlinked'));
+  popup.querySelector('.crop-close-btn').addEventListener('click',()=>popup.remove());
+  document.addEventListener('mousedown',function outside(e){
+    if(!popup.contains(e.target)){popup.remove();document.removeEventListener('mousedown',outside);}
+  });
+}
 
 function checkReady(){
-  // Scan & Fix needs folder + index file
-  runBtn.disabled=!(dirHandle&&fileHandle);
-  // Scan Footnotes needs notes file + index file only
-  fnRunBtn.disabled=!(notesHandle&&fileHandle);
+  pb_runBtn.disabled=!(pb_dirHandle&&pb_fileHandle);
 }
 function checkIdReady(){
   const prefix=document.getElementById('idPrefixInput').value.trim();
-  document.getElementById('applyIdBtn').disabled=!(dirHandle&&fileHandle&&prefix);
-}
-
-function truncate(str,n){
-  return str.length>n ? str.slice(0,n)+'…' : str;
+  document.getElementById('applyIdBtn').disabled=!(pb_dirHandle&&pb_fileHandle&&prefix);
 }
 
 function getTopLevelLiEntries(){
-  // Parse srcContent for top-level <li> tags (not nested inside another <li>)
-  const entries=[];
-  const re=/<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
-  let depth=0, m;
-  re.lastIndex=0;
-  // Walk the full content tracking nesting
-  const liOpenRe=/<li\b[^>]*>/gi;
-  const liCloseRe=/<\/li>/gi;
-  // Simpler approach: collect all <li> with their id and text
   const allLi=/<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
-  let prev=0;
   const positions=[];
   let mm;
-  while((mm=allLi.exec(srcContent))!==null){
+  while((mm=allLi.exec(pb_srcContent))!==null){
     positions.push({index:mm.index,attrs:mm[1],inner:mm[2]});
   }
-  // Top-level = <li> not preceded by an unclosed <li> before it
-  // Simple heuristic: top-level li has no <li> open without close before it
+  const entries=[];
   for(const pos of positions){
-    const before=srcContent.slice(0,pos.index);
+    const before=pb_srcContent.slice(0,pos.index);
     const openCount=(before.match(/<li\b/gi)||[]).length;
     const closeCount=(before.match(/<\/li>/gi)||[]).length;
     if(openCount===closeCount){
-      // extract id
       const idMatch=/\bid="([^"]+)"/.exec(pos.attrs);
       const id=idMatch?idMatch[1]:null;
-      // extract plain text (strip tags)
       const text=pos.inner.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
       if(id) entries.push({id,text});
     }
@@ -209,20 +229,19 @@ function getTopLevelLiEntries(){
 }
 
 /* ==========================================================
-   TOOLTIP — one element, a direct child of <body> so that no
-   overflow:hidden ancestor can ever clip it.
+   TOOLTIP
    ========================================================== */
 const tip=(()=>{
   let t=document.getElementById('tip');
   if(!t){t=document.createElement('div');t.id='tip';t.setAttribute('role','tooltip');}
   t.className='tip';
   t.hidden=true;
-  document.body.appendChild(t);        // re-parent to body no matter where it was authored
+  document.body.appendChild(t);
   return t;
 })();
 
 function showTooltip(span){
-  const c=candidates[Number(span.dataset.i)];
+  const c=pb_candidates[Number(span.dataset.i)];
   if(!c) return;
   const target=span.dataset.target, id=span.dataset.id, num=span.dataset.num;
   tip.innerHTML=
@@ -241,93 +260,31 @@ function showTooltip(span){
 function positionTooltip(e){
   const pad=12, w=tip.offsetWidth, h=tip.offsetHeight;
   let x=e.clientX+pad, y=e.clientY+pad;
-  if(x+w>window.innerWidth-8)  x=e.clientX-w-pad;   // flip left near the right edge
-  if(y+h>window.innerHeight-8) y=e.clientY-h-pad;   // flip up near the bottom edge
+  if(x+w>window.innerWidth-8)  x=e.clientX-w-pad;
+  if(y+h>window.innerHeight-8) y=e.clientY-h-pad;
   tip.style.left=Math.max(8,x)+'px';
   tip.style.top =Math.max(8,y)+'px';
 }
 function hideTooltip(){tip.hidden=true;}
 
 /* ==========================================================
-   PROGRESS
-   ========================================================== */
-const progWrap=document.getElementById('progressWrap'),
-      progFill=document.getElementById('progressFill'),
-      progText=document.getElementById('progressText'),
-      progPct =document.getElementById('progressPct');
-
-function showProgress(label){
-  progWrap.hidden=false;
-  progText.textContent=label;
-  progFill.style.width='0%';
-  progPct.textContent='0%';
-}
-function setProgress(done,total,label){
-  const p=total?Math.round(done/total*100):0;
-  progFill.style.width=p+'%';
-  progPct.textContent=p+'%';
-  if(label) progText.textContent=label;
-}
-function hideProgress(){progWrap.hidden=true;}
-
-/* ==========================================================
-   SKELETON
-   ========================================================== */
-function showSkeletons(){
-  summaryBar.hidden=true;
-  mainBody.innerHTML=`
-    <div class="split">
-      <div class="panel">
-        <div class="panel-head"><span class="panel-title">Loading file</span></div>
-        <div class="sk-pad"><div class="skeleton sk-block"></div></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><span class="panel-title">Loading fixes</span></div>
-        <div class="sk-pad">
-          <div class="skeleton sk-line w85"></div>
-          <div class="skeleton sk-line w70"></div>
-          <div class="skeleton sk-line w85"></div>
-          <div class="skeleton sk-line w45"></div>
-          <div class="skeleton sk-line w70"></div>
-          <div class="skeleton sk-line w85"></div>
-        </div>
-      </div>
-    </div>`;
-}
-
-/* ==========================================================
-   COUNT-UP
-   ========================================================== */
-function countUp(el,target,ms=650){
-  target=Number(target)||0;
-  if(target===0){el.textContent='0';return;}
-  const t0=performance.now();
-  function frame(t){
-    const k=Math.min(1,(t-t0)/ms), eased=1-Math.pow(1-k,3);
-    el.textContent=Math.round(target*eased).toLocaleString();
-    if(k<1) requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-}
-
-/* ==========================================================
    STEP 1 — folder picker
    ========================================================== */
 document.getElementById('pickFolder').addEventListener('click',async()=>{
   try{
-    dirHandle=await window.showDirectoryPicker({
+    pb_dirHandle=await window.showDirectoryPicker({
       mode:'readwrite',
-      id:'epub-folder',      // browser remembers this picker's last location
+      id:'epub-folder',
       startIn:'documents'
     });
-    fileHandles={};
+    pb_fileHandles={};
     let count=0;
-    for await(const [name,handle] of dirHandle.entries()){
+    for await(const [name,handle] of pb_dirHandle.entries()){
       if(handle.kind==='file'&&(name.endsWith('.xhtml')||name.endsWith('.html'))){
-        fileHandles[name]=handle; count++;
+        pb_fileHandles[name]=handle; count++;
       }
     }
-    document.getElementById('folderBtnText').textContent=dirHandle.name;
+    document.getElementById('folderBtnText').textContent=pb_dirHandle.name;
     document.getElementById('pickFolder').classList.add('selected');
     document.getElementById('step1').classList.add('done');
     const st=document.getElementById('folderStatus');
@@ -344,13 +301,13 @@ document.getElementById('pickFolder').addEventListener('click',async()=>{
    ========================================================== */
 document.getElementById('pickFile').addEventListener('click',async()=>{
   try{
-    [fileHandle]=await window.showOpenFilePicker({
+    [pb_fileHandle]=await window.showOpenFilePicker({
       id:'index-file',
-      startIn:dirHandle||'documents',   // open inside the chosen EPUB folder
+      startIn:pb_dirHandle||'documents',
       types:[{description:'XHTML/HTML',accept:{'text/html':['.xhtml','.html']}}],
       multiple:false
     });
-    document.getElementById('fileBtnText').textContent=fileHandle.name;
+    document.getElementById('fileBtnText').textContent=pb_fileHandle.name;
     document.getElementById('pickFile').classList.add('selected');
     document.getElementById('step2').classList.add('done');
     const st=document.getElementById('fileStatus');
@@ -361,44 +318,10 @@ document.getElementById('pickFile').addEventListener('click',async()=>{
   }catch(e){if(e.name!=='AbortError')toast('Error: '+e.message,'error');}
 });
 
-/* ==========================================================
-   STEP 3 — notes file picker (optional)
-   ========================================================== */
-document.getElementById('pickNotes').addEventListener('click', async () => {
-  try {
-    [notesHandle] = await window.showOpenFilePicker({
-      id: 'notes-file',
-      startIn: dirHandle || 'documents',
-      types: [{ description: 'XHTML/HTML', accept: { 'text/html': ['.xhtml', '.html'] } }],
-      multiple: false
-    });
-    notesFileName = notesHandle.name;
-    document.getElementById('notesBtnText').textContent = notesFileName;
-    document.getElementById('pickNotes').classList.add('selected');
-    document.getElementById('step3').classList.add('done');
-    document.getElementById('pickFile').disabled = false;
-    const st = document.getElementById('notesStatus');
-    st.textContent = 'Notes file ready — now pick index file';
-    st.className = 'step-status ok';
-    document.getElementById('notesCheck').classList.add('visible');
-    checkReady();
-  } catch(e) {
-    if (e.name !== 'AbortError') toast('Error: ' + e.message, 'error');
-  }
-});
-
-/* ==========================================================
-   FILE / ESCAPING HELPERS
-   ========================================================== */
-async function readFile(h){return await(await h.getFile()).text();}
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
-  .replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
 /* Build anchor map: "pagebreak_54" -> "chapter1.xhtml" */
 async function buildAnchorMap(onProgress){
   const map={};
-  const entries=Object.entries(fileHandles);
+  const entries=Object.entries(pb_fileHandles);
   let done=0;
   for(const [fname,handle] of entries){
     const content=await readFile(handle);
@@ -407,45 +330,9 @@ async function buildAnchorMap(onProgress){
     while((m=re.exec(content))!==null) map[m[1].toLowerCase()]=fname;
     done++;
     if(onProgress) onProgress(done,entries.length,fname);
-    await new Promise(r=>requestAnimationFrame(r)); // let the progress bar paint
+    await new Promise(r=>requestAnimationFrame(r));
   }
   return map;
-}
-
-/* Build footnote anchor map from the notes file: "pageNum:fnNum" -> anchorId */
-async function buildNotesAnchorMap() {
-  if (!notesHandle) return {};
-  const content = await readFile(notesHandle);
-
-  // Parse pagebreaks in notes file in order
-  const pagebreakRe = /<[^>]+\bid="page_(\d+)"[^>]*>/gi;
-  const pagebreaks = []; // [{page: "222", index: N}]
-  let pb;
-  while ((pb = pagebreakRe.exec(content)) !== null) {
-    pagebreaks.push({ page: pb[1], index: pb.index });
-  }
-
-  // For each fn anchor, record which page it falls after
-  const fnRe = /<a\s+id="([^"]+)"/gi;
-  const fnAnchors = []; // [{id, index, fnNum}]
-  let fa;
-  while ((fa = fnRe.exec(content)) !== null) {
-    const numMatch = /(\d+)$/.exec(fa[1]);
-    if (numMatch) fnAnchors.push({ id: fa[1], index: fa.index, fnNum: numMatch[1] });
-  }
-
-  // Build final map: "pageNum:fnNum" -> anchorId  e.g. "222:1" -> "ch9-fn1"
-  const preciseMap = {};
-  for (const fn of fnAnchors) {
-    // find the last pagebreak before this fn anchor
-    let page = null;
-    for (const p of pagebreaks) {
-      if (p.index < fn.index) page = p.page;
-      else break;
-    }
-    if (page) preciseMap[`${page}:${fn.fnNum}`] = fn.id;
-  }
-  return preciseMap;
 }
 
 /* Extract unique numbers from inside a <p> tag's text content (ignores existing links) */
@@ -458,10 +345,9 @@ function extractNumbers(pContent){
 }
 
 /* ==========================================================
-   DETECTION — the original auto-fix regexes, but this records
-   offsets instead of committing the replacement immediately.
+   DETECTION
    ========================================================== */
-const P_RE   =/(<li\b[^>]*>)([\s\S]*?)(<\/li>)/g;
+const P_RE   =/(<(li|td|p)\b[^>]*>)([\s\S]*?)(<\/\2>)/g;
 const NUM_RE =/(?<!href="[^"]*#page_\d*)(?<!id="page_\d*)(?<!")\b(\d+)\b(?![^<]*<\/a>)/g;
 
 function collectCandidates(content, anchorMap){
@@ -469,39 +355,14 @@ function collectCandidates(content, anchorMap){
   P_RE.lastIndex=0;
   let pm;
   while((pm=P_RE.exec(content))!==null){
-    const inner=pm[2];
-    if(!/\b\d+\b/.test(inner)&&!(romanMode&&/\b[IVXLCDMivxlcdm]+\b/i.test(inner))) continue;
+    const inner=pm[3];
+    if(!/\b\d+\b/.test(inner)&&!(pb_romanMode&&/\b[IVXLCDMivxlcdm]+\b/i.test(inner))) continue;
     const innerStart=pm.index+pm[1].length;
 
-    // mask existing <a>...</a> so already-linked numbers are skipped
     const masked2=inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, m=>' '.repeat(m.length));
 
-    // Detect footnote refs like 214n.15 or 231n.18
-    const FN_RE = /\b(\d+)n\.(\d+)\b/g;
-    FN_RE.lastIndex = 0;
-    let fn;
-    while ((fn = FN_RE.exec(masked2)) !== null) {
-      const fullMatch = fn[0];       // "214n.15"
-      const pageNum = fn[1];         // "214"
-      const fnNum = fn[2];           // "15"
-      const key = `${pageNum}:${fnNum}`;
-      const anchorId = notesAnchorMap[key] || null;
-      out.push({
-        start: innerStart + fn.index,
-        end: innerStart + fn.index + fullMatch.length,
-        num: fullMatch,              // display text "214n.15"
-        id: anchorId || `fn_${pageNum}_${fnNum}`,  // fallback id for display
-        targetFile: anchorId ? notesFileName : null,
-        anchorId: anchorId,          // exact anchor id to use in href
-        isFootnote: true,
-        state: 'skipped'
-      });
-    }
-    // mask footnote refs so the plain-number regex below doesn't also
-    // pick up "214" out of "214n.15"
     const maskedFn = masked2.replace(/\b\d+n\.\d+\b/g, m => ' '.repeat(m.length));
 
-    // detect ranges like "63-5", "63–5", "63—5"
     const RANGE_RE=/\b(\d+)\s*(?:[-–—]|&#x2013;|&#8211;|&#x2014;|&#8212;|&ndash;|&mdash;)\s*(\d+)\b/g;
     const rangePositions=[];
     let rr;
@@ -511,9 +372,7 @@ function collectCandidates(content, anchorMap){
       const fullEnd=endShort.length<startNum.length
         ? startNum.slice(0,startNum.length-endShort.length)+endShort
         : endShort;
-      const sepStart=rr.index+startNum.length;
       const sepEnd=rr.index+rr[0].length-endShort.length;
-      // push start number
       out.push({
         start:innerStart+rr.index,
         end:innerStart+rr.index+startNum.length,
@@ -521,7 +380,6 @@ function collectCandidates(content, anchorMap){
         targetFile:anchorMap['page_'+startNum]||null,
         state:'skipped'
       });
-      // push end number (display short, link full)
       out.push({
         start:innerStart+sepEnd,
         end:innerStart+rr.index+rr[0].length,
@@ -535,7 +393,6 @@ function collectCandidates(content, anchorMap){
     let nm;
     NUM_RE.lastIndex=0;
     while((nm=NUM_RE.exec(maskedFn))!==null){
-      // skip if this position is inside a detected range
       const pos=nm.index;
       if(rangePositions.some(([s,e])=>pos>=s&&pos<e)) continue;
       const num=nm[1];
@@ -548,12 +405,10 @@ function collectCandidates(content, anchorMap){
         state:'skipped'
       });
     }
-    if(romanMode){
-      // Build a masked copy of inner where tag content and entities are replaced
-      // with spaces — same length so offsets stay valid.
+    if(pb_romanMode){
       const masked = inner
-        .replace(/<[^>]*>/g,    m => ' '.repeat(m.length))  // blank out tags
-        .replace(/&[^;]+;/g,    m => ' '.repeat(m.length)); // blank out entities
+        .replace(/<[^>]*>/g,    m => ' '.repeat(m.length))
+        .replace(/&[^;]+;/g,    m => ' '.repeat(m.length));
 
       const ROM_SCAN=/(?<![A-Za-z])([A-Za-z]+)(?![A-Za-z])/g;
       let rm;
@@ -561,7 +416,6 @@ function collectCandidates(content, anchorMap){
       while((rm=ROM_SCAN.exec(masked))!==null){
         const num=rm[1];
         if(!ROMAN_LIST.has(num)) continue;
-        // skip if this token sits inside an existing <a href> tag
         const before=inner.slice(0,rm.index);
         const afterMatch=inner.slice(rm.index+num.length);
         const insideAnchor=(/(<a\b[^>]*>)[^<]*$/.test(before))&&(/<\/a>/.test(afterMatch));
@@ -583,90 +437,49 @@ function collectCandidates(content, anchorMap){
   return out;
 }
 
-/* Scan srcContent for ONLY \d+n\.\d+ footnote refs — no anchorMap needed */
-function collectFootnoteCandidates(content) {
-  const out = [];
-  const P_RE_FN = /(<li\b[^>]*>)([\s\S]*?)(<\/li>)/g;
-  let pm;
-  P_RE_FN.lastIndex = 0;
-  while ((pm = P_RE_FN.exec(content)) !== null) {
-    const inner = pm[2];
-    if (!/\d+n\.\d+/.test(inner)) continue;
-    const innerStart = pm.index + pm[1].length;
-    // mask existing <a>...</a> so already-linked refs are skipped
-    const masked = inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, m => ' '.repeat(m.length));
-    const FN_RE = /\b(\d+)n\.(\d+)\b/g;
-    let fn;
-    FN_RE.lastIndex = 0;
-    while ((fn = FN_RE.exec(masked)) !== null) {
-      const fullMatch = fn[0];
-      const pageNum = fn[1];
-      const fnNum = fn[2];
-      const key = `${pageNum}:${fnNum}`;
-      const anchorId = notesAnchorMap[key] || null;
-      out.push({
-        start: innerStart + fn.index,
-        end: innerStart + fn.index + fullMatch.length,
-        num: fullMatch,
-        id: anchorId || `fn_${pageNum}_${fnNum}`,
-        targetFile: anchorId ? notesFileName : null,
-        anchorId: anchorId,
-        isFootnote: true,
-        state: 'skipped'
-      });
-    }
-  }
-  out.sort((a, b) => a.start - b.start);
-  return out;
-}
-
 /* ==========================================================
    AUTO-SAFETY RULES
    ========================================================== */
 function inRange(num){
-  if(ROMAN_LIST.has(num)) return true; // solo Roman numerals always in range
+  if(ROMAN_LIST.has(num)) return true;
   const n=Number(num);
-  if(rangeMin!==null&&n<rangeMin) return false;
-  if(rangeMax!==null&&n>rangeMax) return false;
+  if(pb_rangeMin!==null&&n<pb_rangeMin) return false;
+  if(pb_rangeMax!==null&&n>pb_rangeMax) return false;
   return true;
 }
 function defaultState(c){
-  if(!c.targetFile)   return 'noanchor';  // red
-  if(!inRange(c.num)) return 'skipped';   // outside the page range
+  if(!c.targetFile)   return 'noanchor';
+  if(!inRange(c.num)) return 'skipped';
   return 'linked';
 }
 function applyAutoRules(){
-  for(const c of candidates) c.state=defaultState(c);
+  for(const c of pb_candidates) c.state=defaultState(c);
 }
 
 /* ==========================================================
-   COMMIT — output built from state==='linked' only. Everything
-   outside a linked number is copied verbatim, so the file is
-   byte-identical except for the intended links.
+   COMMIT
    ========================================================== */
 function buildOutput(){
   let out='',last=0,linked=0,forcedNoAnchor=0;
-  for(const c of candidates){
+  for(const c of pb_candidates){
       if(c.state!=='linked' && c.state!=='manual') continue;
-    if(!c.targetFile){forcedNoAnchor++;continue;}  // cannot link without an anchor
-    out+=srcContent.slice(last,c.start);
+    if(!c.targetFile){forcedNoAnchor++;continue;}
+    out+=pb_srcContent.slice(last,c.start);
     out+=`<a epub:type="index-locator" href="${c.targetFile}#${c.id}">${c.num}</a>`;
     last=c.end;
     linked++;
   }
-  out+=srcContent.slice(last);
+  out+=pb_srcContent.slice(last);
   return {text:out,linked,forcedNoAnchor};
 }
 
 /* ==========================================================
-   SEE-ALSO — resolve a text selection to a stable srcContent
-   offset so applying links never depends on runtime regex
-   search over already-mutated output.
+   SEE-ALSO
    ========================================================== */
 function findLiRangeById(id){
   const re=/<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
   let m;
-  while((m=re.exec(srcContent))!==null){
+  while((m=re.exec(pb_srcContent))!==null){
     const idMatch=/\bid="([^"]+)"/.exec(m[1]);
     if(idMatch&&idMatch[1]===id){
       return {start:m.index,end:m.index+m[0].length};
@@ -675,39 +488,31 @@ function findLiRangeById(id){
   return null;
 }
 function isInsideExistingAnchor(pos){
-  // Scan backwards from pos to find the nearest <a ...> or </a>
-  // Only look back up to 2000 chars for performance
-  const window = srcContent.slice(Math.max(0, pos-2000), pos);
-  const lastOpen = window.lastIndexOf('<a ');
-  const lastClose = window.lastIndexOf('</a>');
-  // If the most recent tag before pos is an opening <a, we're inside it
+  const window_ = pb_srcContent.slice(Math.max(0, pos-2000), pos);
+  const lastOpen = window_.lastIndexOf('<a ');
+  const lastClose = window_.lastIndexOf('</a>');
   return lastOpen > lastClose;
 }
 function findSeeAlsoOffset(selectedText, targetId, sourceLiId=null){
   const targetLiRange=findLiRangeById(targetId);
 
-  // Determine search scope: if we know which <li> the selection came from, search only there.
-  // Otherwise fall back to full srcContent.
   let searchScope, scopeOffset=0;
   if(sourceLiId){
     const srcLiRange=findLiRangeById(sourceLiId);
     if(srcLiRange){
-      searchScope=srcContent.slice(srcLiRange.start, srcLiRange.end);
+      searchScope=pb_srcContent.slice(srcLiRange.start, srcLiRange.end);
       scopeOffset=srcLiRange.start;
     }
   }
   if(!searchScope){
-    searchScope=srcContent;
+    searchScope=pb_srcContent;
     scopeOffset=0;
   }
 
-  // Build a tag-tolerant regex:
-  // Split selectedText on whitespace AND on punctuation+whitespace boundaries
-  // so "Cervantes, Don Quixote" matches "Cervantes, <i>Don Quixote</i>"
   const parts=selectedText.split(/(\s+)/);
   const regexParts=parts.map(p=>{
-    if(/^\s+$/.test(p)) return '\\s*(?:<[^>]+>\\s*)*'; // whitespace gap: allow tags
-    return p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');     // escape literal text
+    if(/^\s+$/.test(p)) return '\\s*(?:<[^>]+>\\s*)*';
+    return p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   });
   const re=new RegExp(regexParts.join(''));
 
@@ -776,14 +581,12 @@ function gutterFor(content){
 }
 
 /* ==========================================================
-   PREVIEW — the original document with every candidate wrapped
-   in a live span. Surrounding file text is left untouched;
-   only the number spans are real HTML.
+   PREVIEW
    ========================================================== */
 function buildPreviewHTML(){
   let out='',last=0;
-  candidates.forEach((c,i)=>{
-    out+=srcContent.slice(last,c.start);
+  pb_candidates.forEach((c,i)=>{
+    out+=pb_srcContent.slice(last,c.start);
     out+=`<span class="num-highlight ${c.state}"`+
          ` data-i="${i}"`+
          ` data-num="${escAttr(c.num)}"`+
@@ -793,24 +596,17 @@ function buildPreviewHTML(){
          ` role="button" tabindex="0">${c.num}</span>`;
     last=c.end;
   });
-  out+=srcContent.slice(last);
+  out+=pb_srcContent.slice(last);
   return sanitizeDoc(out);
 }
 
-/* The index file is the user's own, but it still gets injected into this page —
-   strip anything executable or layout-hijacking before rendering. */
 function sanitizeDoc(s){
   const b=/<body[^>]*>([\s\S]*?)<\/body\s*>/i.exec(s);
   let h=b?b[1]:s;
-  // strip executable blocks
   h=h.replace(/<(script|style|iframe|object|embed|noscript|template)\b[\s\S]*?<\/\1\s*>/gi,'')
-  // strip void elements that don't belong in body
      .replace(/<(script|style|link|meta|base|img|input|form)\b[^>]*\/?>/gi,'')
-  // strip event handlers
      .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,'')
-  // strip javascript: hrefs
      .replace(/\s(?:src|href|xlink:href)\s*=\s*("\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi,'');
-  // if result is empty (body tag not found or stripped everything), return original stripped of head
   if(!h.trim()){
     const head=/<head\b[\s\S]*?<\/head\s*>/i.exec(s);
     h=head?s.slice(head.index+head[0].length):s;
@@ -818,9 +614,6 @@ function sanitizeDoc(s){
   return h;
 }
 
-/* pagebreak anchors are markers only, never clickable — converting them
-   to spans up front avoids invalid nested <a> when one sits inside an
-   outer <a href> (which auto-closes the outer link mid-sentence). */
 function pagebreakAnchorsToSpans(html){
   return html.replace(/<a\s+id="(pagebreak_[^"]+)"\s*\/?>(<\/a>)?/gi,'<span id="$1"></span>');
 }
@@ -833,11 +626,11 @@ function pagebreakSpansToAnchors(html){
    ========================================================== */
 function counts(){
   let sel=0,noAnchor=0;
-  for(const c of candidates){
+  for(const c of pb_candidates){
     if(c.state==='linked'&&c.targetFile) sel++;
     if(!c.targetFile) noAnchor++;
   }
-  return {sel,noAnchor,total:candidates.length};
+  return {sel,noAnchor,total:pb_candidates.length};
 }
 function updateStats(animate){
   const {sel,noAnchor,total}=counts();
@@ -849,7 +642,7 @@ function updateStats(animate){
   set('cTotal',total);
   set('cFixed',sel);
   set('cNotFound',noAnchor);
-  set('cFiles',Object.keys(fileHandles).length);
+  set('cFiles',Object.keys(pb_fileHandles).length);
 }
 function updateSelCount(){
   const {sel,total}=counts();
@@ -860,9 +653,9 @@ function updateSelCount(){
 /* ==========================================================
    ROMAN NUMERAL SELECTION LINKING (Enter key)
    ========================================================== */
-document.addEventListener('keydown', e => {
+pb_mainBody.addEventListener('keydown', e => {
   if(e.key !== 'Enter') return;
-  if(!romanMode) return;
+  if(!pb_romanMode) return;
 
   const preview = document.getElementById('previewContainer');
   if(!preview) return;
@@ -876,12 +669,11 @@ document.addEventListener('keydown', e => {
   let count = 0;
   preview.querySelectorAll('.num-highlight').forEach(span => {
     const i = Number(span.dataset.i);
-    const c = candidates[i];
+    const c = pb_candidates[i];
     if(!c) return;
     if(!ROMAN_LIST.has(c.num) && !ROMAN_LIST.has(c.num.toLowerCase())) return;
     if(!c.targetFile) return;
 
-    // check if span overlaps the selection using Range comparison
     const spanRange = document.createRange();
     spanRange.selectNode(span);
     const selRange = sel.getRangeAt(0);
@@ -903,9 +695,8 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 
-/* write one candidate's state onto its span + its table row */
 function paintSpan(i){
-  const c=candidates[i];
+  const c=pb_candidates[i];
   const span=document.querySelector(`.num-highlight[data-i="${i}"]`);
   if(span){
     span.dataset.state=c.state;
@@ -918,7 +709,7 @@ function paintSpan(i){
   icons();
 }
 function paintAll(){
-  candidates.forEach((c,i)=>{
+  pb_candidates.forEach((c,i)=>{
     const span=document.querySelector(`.num-highlight[data-i="${i}"]`);
     if(span){
       span.dataset.state=c.state;
@@ -936,19 +727,16 @@ function paintAll(){
    ========================================================== */
 function cycleState(span){
   const i=Number(span.dataset.i);
-  const c=candidates[i];
+  const c=pb_candidates[i];
   if(!c) return;
   if(c.state==='manual'){
-    // already manually linked — show change/delete popup
     showManualEditPopup(i);
     return;
   }
   if(!c.targetFile){
-    // no anchor — show file picker
     showManualAnchorPopup(i);
     return;
   }
-  // normal toggle
   const prevState=c.state;
   c.state = c.state==='linked' ? 'skipped' : 'linked';
   pushHistory({type:'cycleState', i, prevState});
@@ -958,8 +746,8 @@ function cycleState(span){
 }
 
 function showManualAnchorPopup(candIndex){
-  const c=candidates[candIndex];
-  const files=Object.keys(fileHandles).sort();
+  const c=pb_candidates[candIndex];
+  const files=Object.keys(pb_fileHandles).sort();
   if(!files.length){ toast('No folder loaded','error'); return; }
 
   const overlay=document.createElement('div');
@@ -986,7 +774,7 @@ function showManualAnchorPopup(candIndex){
       pushHistory({type:'manualAnchor', candIndex, prevTargetFile:c.targetFile, prevState:c.state});
       c.targetFile=fname;
       c.state='manual';
-      manualAnchorMap[c.id]=fname;
+      pb_manualAnchorMap[c.id]=fname;
       paintSpan(candIndex);
       updateSelCount();
       updateStats(false);
@@ -996,7 +784,7 @@ function showManualAnchorPopup(candIndex){
 }
 
 function showManualEditPopup(candIndex){
-  const c=candidates[candIndex];
+  const c=pb_candidates[candIndex];
 
   const overlay=document.createElement('div');
   overlay.className='manual-anchor-overlay';
@@ -1027,7 +815,7 @@ function showManualEditPopup(candIndex){
     pushHistory({type:'manualAnchor', candIndex, prevTargetFile:c.targetFile, prevState:c.state});
     c.targetFile=null;
     c.state='noanchor';
-    delete manualAnchorMap[c.id];
+    delete pb_manualAnchorMap[c.id];
     paintSpan(candIndex);
     updateSelCount();
     updateStats(false);
@@ -1054,7 +842,7 @@ function statusPill(c){
 }
 
 function buildRow(i){
-  const c=candidates[i];
+  const c=pb_candidates[i];
   const tr=document.createElement('tr');
   tr.dataset.i=i;
   if(c.state!=='linked' && c.state!=='manual') tr.className='is-skipped';
@@ -1069,8 +857,8 @@ function buildRow(i){
 function renderTable(onlyApplied){
   const tbody=document.getElementById('fixBody');
   if(!tbody) return;
-  const idx=candidates.map((c,i)=>i)
-      .filter(i=>onlyApplied?((candidates[i].state==='linked'||candidates[i].state==='manual')&&candidates[i].targetFile):true);
+  const idx=pb_candidates.map((c,i)=>i)
+      .filter(i=>onlyApplied?((pb_candidates[i].state==='linked'||pb_candidates[i].state==='manual')&&pb_candidates[i].targetFile):true);
   const shown=idx.slice(0,MAX_ROWS);
   tbody.innerHTML='';
   for(const i of shown) tbody.appendChild(buildRow(i));
@@ -1083,17 +871,16 @@ function renderTable(onlyApplied){
     note.hidden=idx.length<=MAX_ROWS;
   }
   const sub=document.getElementById('tableSub');
-  const saCount=onlyApplied?seeAlsoLinks.filter(s=>s.applied).length:seeAlsoLinks.length;
+  const saCount=onlyApplied?pb_seeAlsoLinks.filter(s=>s.applied).length:pb_seeAlsoLinks.length;
   if(sub) sub.textContent=`${(idx.length+saCount).toLocaleString()} ${onlyApplied?'applied':'detected'}`;
   icons();
 }
 
 /* ==========================================================
-   RENDER — two-column split view.
-   Only innerHTML changes; no listeners are attached here.
+   RENDER
    ========================================================== */
 function renderResults(){
-  mainBody.innerHTML=`
+  pb_mainBody.innerHTML=`
     <div class="split">
 
       <section class="panel">
@@ -1105,17 +892,17 @@ function renderResults(){
 
         <div class="review-bar">
           <label class="switch">
-            <input type="checkbox" id="anchorOnly" ${anchorOnly?'checked':''}/>
+            <input type="checkbox" id="anchorOnly" ${pb_anchorOnly?'checked':''}/>
             <span class="track"></span>
             <span>Only link numbers with a matching anchor</span>
           </label>
           <div class="range-filter">
             <span>Range</span>
             <input type="number" id="rangeMin" placeholder="min" min="0"
-                   value="${rangeMin===null?'':rangeMin}"/>
+                   value="${pb_rangeMin===null?'':pb_rangeMin}"/>
             <span>&ndash;</span>
             <input type="number" id="rangeMax" placeholder="max" min="0"
-                   value="${rangeMax===null?'':rangeMax}"/>
+                   value="${pb_rangeMax===null?'':pb_rangeMax}"/>
           </div>
         </div>
 
@@ -1178,8 +965,7 @@ function renderResults(){
 }
 
 /* ==========================================================
-   NUMBER SEARCH — jump to a candidate span in the preview.
-   Exact data-num matches win; partial matches are the fallback.
+   NUMBER SEARCH
    ========================================================== */
 let searchMatches=[], searchPos=0;
 
@@ -1212,7 +998,7 @@ function runSearch(){
   searchMatches=[]; searchPos=0;
   if(q!==''){
     const exact=[], partial=[];
-    candidates.forEach((c,i)=>{
+    pb_candidates.forEach((c,i)=>{
       if(c.num===q) exact.push(i);
       else if(c.num.includes(q)) partial.push(i);
     });
@@ -1238,15 +1024,15 @@ function focusNumber(i){
   if(!span) return;
   span.scrollIntoView({behavior:'smooth',block:'center'});
   span.classList.remove('flash');
-  void span.offsetWidth;              // restart the animation
+  void span.offsetWidth;
   span.classList.add('flash');
 }
 
 function readRange(){
   const a=document.getElementById('rangeMin'), b=document.getElementById('rangeMax');
   if(!a||!b) return;
-  rangeMin=a.value.trim()===''?null:Number(a.value.trim());
-  rangeMax=b.value.trim()===''?null:Number(b.value.trim());
+  pb_rangeMin=a.value.trim()===''?null:Number(a.value.trim());
+  pb_rangeMax=b.value.trim()===''?null:Number(b.value.trim());
   applyAutoRules();
   paintAll();
   const {sel,total}=counts();
@@ -1254,10 +1040,10 @@ function readRange(){
 }
 
 function toggleAnchorOnly(on){
-  anchorOnly=on;
+  pb_anchorOnly=on;
   if(on){
     let n=0;
-    for(const c of candidates)
+    for(const c of pb_candidates)
       if(!c.targetFile&&c.state==='linked'){c.state='noanchor';n++;}
     paintAll();
     toast(n?`${n} anchorless number(s) skipped`:'Anchor-only filter on','success');
@@ -1269,27 +1055,16 @@ function toggleAnchorOnly(on){
 function applySelected(){
   const {linked,forcedNoAnchor}=buildOutput();
 
-  // Merge page-number candidates and see-also links into one
-  // left-to-right pass over the untouched srcContent, so offsets
-  // never collide with each other's replacements.
   const segs=[];
-  for(const c of candidates){
+  for(const c of pb_candidates){
     if(c.state!=='linked' && c.state!=='manual') continue;
     if(!c.targetFile) continue;
-    // For footnote candidates, use anchorId directly in href
-    if (c.isFootnote) {
-      segs.push({
-        start: c.start, end: c.end,
-        html: `<a epub:type="index-locator" href="${c.targetFile}#${c.anchorId}">${c.num}</a>`
-      });
-    } else {
-      segs.push({
-        start: c.start, end: c.end,
-        html: `<a epub:type="index-locator" href="${c.targetFile}#${c.id}">${c.num}</a>`
-      });
-    }
+    segs.push({
+      start: c.start, end: c.end,
+      html: `<a epub:type="index-locator" href="${c.targetFile}#${c.id}">${c.num}</a>`
+    });
   }
-  for(const s of seeAlsoLinks){
+  for(const s of pb_seeAlsoLinks){
     if(s.srcStart==null){
       s.applied=false;
       toast(`Could not locate "${truncate(s.selectedText,30)}" in source — skipped`,'error');
@@ -1304,21 +1079,21 @@ function applySelected(){
 
   let out='',last=0;
   for(const seg of segs){
-    if(seg.start<last) continue; // overlapping segment — skip to avoid corrupting output
-    out+=srcContent.slice(last,seg.start);
+    if(seg.start<last) continue;
+    out+=pb_srcContent.slice(last,seg.start);
     out+=seg.html;
     last=seg.end;
     if(seg.isSeeAlso) seg.ref.applied=true;
   }
-  out+=srcContent.slice(last);
-  fixedContent=out;
+  out+=pb_srcContent.slice(last);
+  pb_fixedContent=out;
 
-  applied=true;
-  saveBtn.disabled=false;
-  copyBtn.disabled=false;
+  pb_applied=true;
+  pb_saveBtn.disabled=false;
+  pb_copyBtn.disabled=false;
   renderTable(true);
   renderSeeAlsoTable();
-  const seeAlsoCount=seeAlsoLinks.filter(s=>s.applied).length;
+  const seeAlsoCount=pb_seeAlsoLinks.filter(s=>s.applied).length;
   let msg=`Applied — ${linked.toLocaleString()} link${linked===1?'':'s'} in the output`;
   if(seeAlsoCount) msg+=`, ${seeAlsoCount} see-also link${seeAlsoCount===1?'':'s'}`;
   if(forcedNoAnchor) msg+=`, ${forcedNoAnchor} skipped (no anchor)`;
@@ -1326,11 +1101,9 @@ function applySelected(){
 }
 
 /* ==========================================================
-   DELEGATED EVENTS — attached ONCE, at load, to #mainBody.
-   #mainBody lives in index.html and is never replaced; only
-   its innerHTML changes. Nothing below re-binds on re-render.
+   DELEGATED EVENTS
    ========================================================== */
-mainBody.addEventListener('click',e=>{
+pb_mainBody.addEventListener('click',e=>{
   const span=e.target.closest('.num-highlight');
   if(span){cycleState(span);return;}
 
@@ -1349,7 +1122,7 @@ mainBody.addEventListener('click',e=>{
   if(row&&row.dataset.i!==undefined){focusNumber(row.dataset.i);return;}
 });
 
-mainBody.addEventListener('keydown',e=>{
+pb_mainBody.addEventListener('keydown',e=>{
   if(e.target.id==='numSearchInput'){
     if(e.key==='Enter'){e.preventDefault();stepSearch(e.shiftKey?-1:1);}
     else if(e.key==='Escape'){e.preventDefault();resetSearch();}
@@ -1359,23 +1132,23 @@ mainBody.addEventListener('keydown',e=>{
   if(span&&(e.key==='Enter'||e.key===' ')){e.preventDefault();cycleState(span);}
 });
 
-mainBody.addEventListener('input',e=>{
+pb_mainBody.addEventListener('input',e=>{
   if(e.target.id==='numSearchInput') runSearch();
 });
 
-mainBody.addEventListener('mouseover',e=>{
+pb_mainBody.addEventListener('mouseover',e=>{
   const span=e.target.closest('.num-highlight');
   if(span){showTooltip(span);positionTooltip(e);}
 });
-mainBody.addEventListener('mousemove',e=>{
+pb_mainBody.addEventListener('mousemove',e=>{
   const span=e.target.closest('.num-highlight');
   if(span){ if(tip.hidden) showTooltip(span); positionTooltip(e); }
   else if(!tip.hidden) hideTooltip();
 });
-mainBody.addEventListener('mouseout',e=>{
+pb_mainBody.addEventListener('mouseout',e=>{
   if(e.target.closest('.num-highlight')) hideTooltip();
 });
-mainBody.addEventListener('focusin',e=>{
+pb_mainBody.addEventListener('focusin',e=>{
   const span=e.target.closest&&e.target.closest('.num-highlight');
   if(span){
     showTooltip(span);
@@ -1383,20 +1156,18 @@ mainBody.addEventListener('focusin',e=>{
     positionTooltip({clientX:r.left,clientY:r.bottom});
   }
 });
-mainBody.addEventListener('focusout',e=>{
+pb_mainBody.addEventListener('focusout',e=>{
   if(e.target.closest&&e.target.closest('.num-highlight')) hideTooltip();
 });
-mainBody.addEventListener('scroll',()=>{ if(!tip.hidden) hideTooltip(); },true);
+pb_mainBody.addEventListener('scroll',()=>{ if(!tip.hidden) hideTooltip(); },true);
 
-mainBody.addEventListener('mouseup',(e)=>{
-  // if user clicks an already-zoned mark, show edit/remove popup
+pb_mainBody.addEventListener('mouseup',(e)=>{
   const clickedMark=e.target.closest('mark.sa-linked');
   if(clickedMark){
     showSeeAlsoEditPopup(clickedMark);
     return;
   }
 
-  // See-also selection
   const sel=window.getSelection();
   if(sel&&sel.toString().trim().length>1){
     const container=document.getElementById('previewContainer');
@@ -1406,7 +1177,6 @@ mainBody.addEventListener('mouseup',(e)=>{
       if(entries.length===0) return;
       const range=sel.getRangeAt(0);
       const rect=range.getBoundingClientRect();
-      // find which <li> the selection originated from
       const anchorLi=sel.anchorNode.parentElement&&sel.anchorNode.parentElement.closest('li');
       const sourceLiId=anchorLi?anchorLi.id:null;
       showSeeAlsoPopup(selectedText, entries, rect, range, null, sourceLiId);
@@ -1416,35 +1186,81 @@ mainBody.addEventListener('mouseup',(e)=>{
   }
 });
 
-mainBody.addEventListener('change',e=>{
+pb_mainBody.addEventListener('change',e=>{
   if(e.target.id==='anchorOnly'){toggleAnchorOnly(e.target.checked);return;}
   if(e.target.id==='rangeMin'||e.target.id==='rangeMax'){readRange();return;}
 });
 
+pb_mainBody.addEventListener('mousedown',e=>{
+  if(!pb_cropMode) return;
+  const container=document.getElementById('previewContainer');
+  if(!container||!container.contains(e.target)) return;
+  e.preventDefault();
+  document.querySelectorAll('.crop-popup').forEach(p=>p.remove());
+  pb_cropContainerEl=container;
+  const rect=container.getBoundingClientRect();
+  pb_cropStartX=e.clientX-rect.left+container.scrollLeft;
+  pb_cropStartY=e.clientY-rect.top+container.scrollTop;
+  pb_cropDragging=true;
+  removeCropRect();
+  pb_cropRectEl=document.createElement('div');
+  pb_cropRectEl.id='cropRect';
+  pb_cropRectEl.style.left=pb_cropStartX+'px';
+  pb_cropRectEl.style.top=pb_cropStartY+'px';
+  pb_cropRectEl.style.width='0px';
+  pb_cropRectEl.style.height='0px';
+  container.appendChild(pb_cropRectEl);
+});
+
+pb_mainBody.addEventListener('mousemove',e=>{
+  if(!pb_cropMode||!pb_cropDragging||!pb_cropRectEl||!pb_cropContainerEl) return;
+  const rect=pb_cropContainerEl.getBoundingClientRect();
+  const curX=e.clientX-rect.left+pb_cropContainerEl.scrollLeft;
+  const curY=e.clientY-rect.top+pb_cropContainerEl.scrollTop;
+  const x=Math.min(curX,pb_cropStartX), y=Math.min(curY,pb_cropStartY);
+  const w=Math.abs(curX-pb_cropStartX), h=Math.abs(curY-pb_cropStartY);
+  pb_cropRectEl.style.left=x+'px';
+  pb_cropRectEl.style.top=y+'px';
+  pb_cropRectEl.style.width=w+'px';
+  pb_cropRectEl.style.height=h+'px';
+});
+
+pb_mainBody.addEventListener('mouseup',e=>{
+  if(!pb_cropMode||!pb_cropDragging) return;
+  pb_cropDragging=false;
+  if(!pb_cropRectEl) return;
+  const zoneRect=pb_cropRectEl.getBoundingClientRect();
+  removeCropRect();
+  if(zoneRect.width<3||zoneRect.height<3) return;
+
+  const spans=[...document.querySelectorAll('#previewContainer .num-highlight')].filter(span=>{
+    const r=span.getBoundingClientRect();
+    return !(r.right<zoneRect.left||r.left>zoneRect.right||r.bottom<zoneRect.top||r.top>zoneRect.bottom);
+  });
+  if(!spans.length){ toast('No numbers in selection','error'); return; }
+  showCropPopup(spans, zoneRect);
+});
+
 document.getElementById('applyIdBtn').addEventListener('click', async()=>{
-  if(!fileHandle){ toast('Pick an index file first','error'); return; }
+  if(!pb_fileHandle){ toast('Pick an index file first','error'); return; }
   const rawPrefix=document.getElementById('idPrefixInput').value.trim();
   if(!rawPrefix){ toast('Enter an ID prefix first','error'); return; }
 
   try{
-    let content=await readFile(fileHandle);
-    // remove existing id attributes from <li> tags
+    let content=await readFile(pb_fileHandle);
     content=content.replace(/<li(\s[^>]*?)?\s+id="[^"]*"/gi, (m,attrs)=>{
       return '<li'+(attrs||'');
     });
-    // assign new sequential IDs to all <li> tags
     let counter=1;
     content=content.replace(/<li(\b[^>]*)?>/gi,(m,attrs)=>{
       const id=`${rawPrefix}${String(counter++).padStart(4,'0')}`;
       if(attrs){
-        // remove any leftover id attr just in case
         attrs=attrs.replace(/\s+id="[^"]*"/,'');
         return `<li${attrs} id="${id}">`;
       }
       return `<li id="${id}">`;
     });
-    // save file
-    const writable=await fileHandle.createWritable();
+    const writable=await pb_fileHandle.createWritable();
     await writable.write(content);
     await writable.close();
     toast(`IDs applied: ${counter-1} <li> tags updated`,'success');
@@ -1457,7 +1273,7 @@ function showSeeAlsoEditPopup(mark){
   document.querySelectorAll('.see-also-edit-popup').forEach(p=>p.remove());
 
   const saI=Number(mark.dataset.saI);
-  const s=seeAlsoLinks[saI];
+  const s=pb_seeAlsoLinks[saI];
   if(!s) return;
 
   const rect=mark.getBoundingClientRect();
@@ -1491,9 +1307,7 @@ function showSeeAlsoEditPopup(mark){
     popup.remove();
     const entries=getTopLevelLiEntries();
     const rect2=mark.getBoundingClientRect();
-    // reuse range-like object for position
     showSeeAlsoPopup(s.selectedText, entries, rect2, null, (targetId, targetText)=>{
-      // update the existing seeAlsoLink
       s.targetId=targetId;
       s.targetText=targetText;
       s.applied=false;
@@ -1513,13 +1327,10 @@ function showSeeAlsoEditPopup(mark){
 
   popup.querySelector('.sa-edit-remove').addEventListener('click',()=>{
     popup.remove();
-    // unwrap mark
     const parent=mark.parentNode;
     while(mark.firstChild) parent.insertBefore(mark.firstChild,mark);
     parent.removeChild(mark);
-    // remove from seeAlsoLinks
-    seeAlsoLinks.splice(saI,1);
-    // update saI on remaining marks
+    pb_seeAlsoLinks.splice(saI,1);
     document.querySelectorAll('mark.sa-linked').forEach(m=>{
       const i=Number(m.dataset.saI);
       if(i>saI) m.dataset.saI=i-1;
@@ -1581,24 +1392,19 @@ function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null, sourc
     const fuzzyIds=new Set(fuzzyResults.map(r=>r.item.id));
     const fl=(filter||'').toLowerCase();
 
-    // starting letter of selected text
     const startLetter=(selectedText.trim()[0]||'A').toUpperCase();
 
-    // all entries sorted A-Z, filtered by search
     const allSorted=entries
       .filter(e=>!fl||e.text.toLowerCase().includes(fl))
       .sort((a,b)=>a.text.localeCompare(b.text));
 
-    // reorder: start from startLetter, wrap around
     const startIdx=allSorted.findIndex(e=>e.text.toUpperCase()[0]>=startLetter);
     const reordered=startIdx>0
       ? [...allSorted.slice(startIdx), ...allSorted.slice(0,startIdx)]
       : allSorted;
 
-    // build HTML
     let html='';
 
-    // 1. Fuzzy section
     if(fuzzyResults.length){
       html+=`<div class="sa-section-label">Fuzzy Matches</div>`;
       html+=fuzzyResults.slice(0,15).map(r=>makeBtn(r.item,true)).join('');
@@ -1607,10 +1413,8 @@ function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null, sourc
       html+=`<div class="sa-empty">No fuzzy matches</div>`;
     }
 
-    // 2. Divider
     html+=makeDivider();
 
-    // 3. Alpha section grouped by letter, starting from startLetter
     let currentLetter='';
     for(const e of reordered){
       const letter=(e.text[0]||'').toUpperCase();
@@ -1652,10 +1456,9 @@ function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null, sourc
 }
 
 function applySeeAlsoLink(selectedText, targetId, targetText, range, sourceLiId=null){
-  // Record in seeAlsoLinks array for later apply
-  const saIndex=seeAlsoLinks.length;
+  const saIndex=pb_seeAlsoLinks.length;
   const offset=findSeeAlsoOffset(selectedText, targetId, sourceLiId);
-  seeAlsoLinks.push({
+  pb_seeAlsoLinks.push({
     selectedText, targetId, targetText, applied:false,
     srcStart: offset?offset.srcStart:null,
     srcEnd: offset?offset.srcEnd:null
@@ -1666,39 +1469,34 @@ function applySeeAlsoLink(selectedText, targetId, targetText, range, sourceLiId=
     toast(`Could not find "${truncate(selectedText,30)}" in source — see-also skipped`,'error');
   }
 
-  // Visually wrap the selection in a green highlight span
   try{
     const mark=document.createElement('mark');
     mark.className='sa-linked';
-    mark.dataset.saI=seeAlsoLinks.length-1;
+    mark.dataset.saI=pb_seeAlsoLinks.length-1;
     mark.dataset.targetId=targetId;
     mark.title=`→ #${targetId}`;
     range.surroundContents(mark);
   }catch(e){
-    // surroundContents fails across tags — use extractContents
     const frag=range.extractContents();
     const mark=document.createElement('mark');
     mark.className='sa-linked';
-    mark.dataset.saI=seeAlsoLinks.length-1;
+    mark.dataset.saI=pb_seeAlsoLinks.length-1;
     mark.dataset.targetId=targetId;
     mark.title=`→ #${targetId}`;
     mark.appendChild(frag);
     range.insertNode(mark);
   }
 
-  // Add to fixes table
   renderSeeAlsoTable();
   if(offset) toast(`Linked "${truncate(selectedText,30)}" → #${targetId}`,'success');
 }
 
 function renderSeeAlsoTable(){
-  // append see-also rows to fixBody
   const tbody=document.getElementById('fixBody');
   if(!tbody) return;
-  // remove old sa rows
   tbody.querySelectorAll('tr.sa-row').forEach(r=>r.remove());
-  for(let i=0;i<seeAlsoLinks.length;i++){
-    const s=seeAlsoLinks[i];
+  for(let i=0;i<pb_seeAlsoLinks.length;i++){
+    const s=pb_seeAlsoLinks[i];
     const tr=document.createElement('tr');
     tr.className='sa-row';
     tr.dataset.saI=i;
@@ -1717,30 +1515,29 @@ function renderSeeAlsoTable(){
 /* ==========================================================
    RUN — scan, then hand over to review
    ========================================================== */
-runBtn.addEventListener('click',async()=>{
-  runBtn.disabled=true;
-  runBtnText.textContent='Scanning...';
-  const spinIcon=runBtn.querySelector('svg,i');
+pb_runBtn.addEventListener('click',async()=>{
+  pb_runBtn.disabled=true;
+  pb_runBtnText.textContent='Scanning...';
+  const spinIcon=pb_runBtn.querySelector('svg,i');
   if(spinIcon) spinIcon.classList.add('spin');
-  showSkeletons();
+  showSkeletons(pb_summaryBar, pb_mainBody);
   showProgress('Mapping anchors');
-  saveBtn.disabled=true;
-  copyBtn.disabled=true;
-  applied=false;
-  fixedContent='';
+  pb_saveBtn.disabled=true;
+  pb_copyBtn.disabled=true;
+  pb_applied=false;
+  pb_fixedContent='';
   hideTooltip();
   try{
     const anchorMap=await buildAnchorMap((done,total,fname)=>{
       setProgress(done,total,`${done}/${total} · ${fname}`);
     });
-    notesAnchorMap=await buildNotesAnchorMap();
     setProgress(1,1,'Detecting numbers');
-    srcContent=await readFile(fileHandle);
-    candidates=collectCandidates(srcContent,anchorMap);
+    pb_srcContent=await readFile(pb_fileHandle);
+    pb_candidates=collectCandidates(pb_srcContent,anchorMap);
     applyAutoRules();
     hideProgress();
 
-    summaryBar.hidden=false;
+    pb_summaryBar.hidden=false;
     updateStats(true);
     renderResults();
 
@@ -1753,8 +1550,8 @@ runBtn.addEventListener('click',async()=>{
     hideProgress();
     console.error(e);
     toast('Error: '+e.message,'error');
-    summaryBar.hidden=true;
-    mainBody.innerHTML=`
+    pb_summaryBar.hidden=true;
+    pb_mainBody.innerHTML=`
       <div class="empty-state is-error">
         <span class="empty-icon"><i data-lucide="alert-triangle"></i></span>
         <h2>Scan failed</h2>
@@ -1762,95 +1559,38 @@ runBtn.addEventListener('click',async()=>{
       </div>`;
     icons();
   }
-  const doneIcon=runBtn.querySelector('svg,i');
+  const doneIcon=pb_runBtn.querySelector('svg,i');
   if(doneIcon) doneIcon.classList.remove('spin');
-  runBtnText.textContent='Scan & Fix';
+  pb_runBtnText.textContent='Scan & Fix';
   checkReady();
 });
 
 /* ==========================================================
-   FOOTNOTE SCAN — independent of the folder/anchor-map scan;
-   only needs the index file + notes file.
+   SAVE / COPY
    ========================================================== */
-fnRunBtn.addEventListener('click', async () => {
-  fnRunBtn.disabled = true;
-  fnRunBtnText.textContent = 'Scanning...';
-  const spinIcon = fnRunBtn.querySelector('svg,i');
-  if (spinIcon) spinIcon.classList.add('spin');
-  showSkeletons();
-  showProgress('Reading notes file');
-  saveBtn.disabled = true;
-  copyBtn.disabled = true;
-  applied = false;
-  fixedContent = '';
-  seeAlsoLinks = [];
-  hideTooltip();
-  try {
-    notesAnchorMap = await buildNotesAnchorMap();
-    setProgress(1, 1, 'Detecting footnote refs');
-    srcContent = await readFile(fileHandle);
-    candidates = collectFootnoteCandidates(srcContent);
-    // auto-link those with a found anchor, mark rest as noanchor
-    for (const c of candidates) {
-      c.state = c.targetFile ? 'linked' : 'noanchor';
-    }
-    hideProgress();
-    summaryBar.hidden = false;
-    updateStats(true);
-    renderResults();
-    const linked = candidates.filter(c => c.state === 'linked').length;
-    const missing = candidates.filter(c => c.state === 'noanchor').length;
-    toast(
-      `${candidates.length} footnote ref(s) found — ${linked} ready to link` +
-      (missing ? `, ${missing} anchor missing` : '') +
-      '. Review, then Apply Selected.',
-      'success', 4200
-    );
-  } catch (e) {
-    hideProgress();
-    console.error(e);
-    toast('Error: ' + e.message, 'error');
-    summaryBar.hidden = true;
-    mainBody.innerHTML = `
-      <div class="empty-state is-error">
-        <span class="empty-icon"><i data-lucide="alert-triangle"></i></span>
-        <h2>Scan failed</h2>
-        <p>${esc(e.message)}</p>
-      </div>`;
-    icons();
-  }
-  const doneIcon = fnRunBtn.querySelector('svg,i');
-  if (doneIcon) doneIcon.classList.remove('spin');
-  fnRunBtnText.textContent = 'Scan Footnotes';
-  checkReady();
-});
-
-/* ==========================================================
-   SAVE / COPY — only ever write the applied output
-   ========================================================== */
-saveBtn.addEventListener('click',async()=>{
-  if(!fileHandle||!applied){toast('Click "Apply Selected" first','error');return;}
+pb_saveBtn.addEventListener('click',async()=>{
+  if(!pb_fileHandle||!pb_applied){toast('Click "Apply Selected" first','error');return;}
   try{
-    const writable=await fileHandle.createWritable();
-    await writable.write(fixedContent);
+    const writable=await pb_fileHandle.createWritable();
+    await writable.write(pb_fixedContent);
     await writable.close();
-    toast(`Saved: ${fileHandle.name}`,'success');
+    toast(`Saved: ${pb_fileHandle.name}`,'success');
   }catch(e){toast('Save error: '+e.message,'error');}
 });
 
-copyBtn.addEventListener('click',()=>{
-  if(!applied){toast('Click "Apply Selected" first','error');return;}
-  navigator.clipboard.writeText(fixedContent)
+pb_copyBtn.addEventListener('click',()=>{
+  if(!pb_applied){toast('Click "Apply Selected" first','error');return;}
+  navigator.clipboard.writeText(pb_fixedContent)
     .then(()=>toast('Copied to clipboard','success'))
     .catch(e=>toast('Copy failed: '+e.message,'error'));
 });
 
-/* ==========================================================
-   TAB SWITCHER
-   ========================================================== */
-const tabPane1=document.getElementById('tabPane1');
+document.getElementById('romanToggle').addEventListener('change', e => {
+  pb_romanMode = e.target.checked;
+});
 
-function setTab(){
-  tabPane1.hidden=false;
+document.getElementById('idPrefixInput').addEventListener('input', checkIdReady);
+
 }
-setTab();
+
+initPagebreak();

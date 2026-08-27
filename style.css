@@ -1425,3 +1425,75 @@ mark.sa-linked{
 }
 .sa-edit-btn:hover{background:var(--accent-soft);color:var(--accent);}
 .sa-edit-remove:hover{background:var(--fail-soft);color:var(--fail);}
+
+/* ==========================================================
+   CROP SELECT
+   ========================================================== */
+#previewContainer{position:relative;}
+
+body.crop-mode #previewContainer{
+  cursor:crosshair;
+  user-select:none;
+}
+
+#cropRect{
+  position:absolute;
+  border:2px dashed var(--accent);
+  background:var(--accent-soft);
+  opacity:.7;
+  pointer-events:none;
+  z-index:999;
+}
+
+.crop-popup{
+  position:fixed;
+  z-index:1000;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:14px 16px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.18);
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  min-width:200px;
+}
+.crop-popup-label{
+  font-size:0.85rem;
+  font-weight:600;
+  color:var(--text);
+}
+.crop-popup-note{
+  font-size:0.75rem;
+  color:var(--muted);
+}
+.crop-popup-actions{
+  display:flex;
+  gap:8px;
+}
+.crop-popup-actions button{
+  border:none;cursor:pointer;
+  border-radius:var(--r-sm);
+  padding:6px 12px;
+  font-size:var(--fs-13);
+}
+.crop-close-btn{
+  background:var(--surface-2);color:var(--muted);
+  margin-left:auto;
+}
+
+#cropIndicator{
+  position:fixed;
+  bottom:24px;
+  right:24px;
+  background:var(--accent);
+  color:#fff;
+  font-size:0.78rem;
+  font-weight:600;
+  padding:6px 14px;
+  border-radius:20px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.2);
+  z-index:998;
+  pointer-events:none;
+  letter-spacing:0.01em;
+}
