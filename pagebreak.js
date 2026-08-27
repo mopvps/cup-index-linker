@@ -348,7 +348,7 @@ function extractNumbers(pContent){
    DETECTION
    ========================================================== */
 const P_RE   =/(<(li|td|p)\b[^>]*>)([\s\S]*?)(<\/\2>)/g;
-const NUM_RE =/(?<!href="[^"]*#page_\d*)(?<!id="page_\d*)(?<!")\b(\d+)\b(?![^<]*<\/a>)/g;
+const NUM_RE =/(?<!href="[^"]*#page_\d*)(?<!id="page_\d*)(?<!")\b(\d+)\b(?![\-–—\.]?\d*n\b)(?![^<]*<\/a>)/g;
 
 function collectCandidates(content, anchorMap){
   const out=[];
@@ -361,13 +361,30 @@ function collectCandidates(content, anchorMap){
 
     const masked2=inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, m=>' '.repeat(m.length));
 
-    const maskedFn = masked2.replace(/\b\d+n\.\d+\b/g, m => ' '.repeat(m.length));
+    // Find all n-suffix tokens: numbers/ranges followed by n (e.g. 154n, 250-1n, 250.1n)
+    const masked2Normalized = masked2.replace(
+      /&#x2013;|&#8211;|&#x2014;|&#8212;|&ndash;|&mdash;/g,
+      m => '-'.padEnd(m.length, ' ')
+    );
+    const N_SUFFIX_RE = /\b(\d+(?:[-–—\. ]+\d+)*n(?:\.\d+)?)\b/g;
+    const nZones = [];
+    let nz;
+    N_SUFFIX_RE.lastIndex = 0;
+    while ((nz = N_SUFFIX_RE.exec(masked2Normalized)) !== null) {
+      nZones.push([nz.index, nz.index + nz[0].length]);
+    }
+
+    // Helper: check if a position falls inside any n-suffix zone
+    function isInNZone(pos) {
+      return nZones.some(([s, e]) => pos >= s && pos < e);
+    }
 
     const RANGE_RE=/\b(\d+)\s*(?:[-–—]|&#x2013;|&#8211;|&#x2014;|&#8212;|&ndash;|&mdash;)\s*(\d+)\b/g;
     const rangePositions=[];
     let rr;
     RANGE_RE.lastIndex=0;
-    while((rr=RANGE_RE.exec(maskedFn))!==null){
+    while((rr=RANGE_RE.exec(masked2))!==null){
+      if (isInNZone(rr.index)) continue;
       const startNum=rr[1], endShort=rr[2];
       const fullEnd=endShort.length<startNum.length
         ? startNum.slice(0,startNum.length-endShort.length)+endShort
@@ -392,9 +409,10 @@ function collectCandidates(content, anchorMap){
 
     let nm;
     NUM_RE.lastIndex=0;
-    while((nm=NUM_RE.exec(maskedFn))!==null){
+    while((nm=NUM_RE.exec(masked2))!==null){
       const pos=nm.index;
       if(rangePositions.some(([s,e])=>pos>=s&&pos<e)) continue;
+      if(isInNZone(pos)) continue;
       const num=nm[1];
       const id='page_'+num;
       out.push({
