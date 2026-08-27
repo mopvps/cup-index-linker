@@ -79,12 +79,14 @@ async function buildNotesAnchorMap() {
     pagebreaks.push({ page: pb[1], index: pb.index });
   }
 
-  const fnRe = /<a\s+id="([^"]+)"/gi;
+  const fnRe = /<[a-z][a-z0-9]*\s[^>]*\bid="([^"]+)"/gi;
   const fnAnchors = [];
   let fa;
   while ((fa = fnRe.exec(content)) !== null) {
-    const numMatch = /(\d+)$/.exec(fa[1]);
-    if (numMatch) fnAnchors.push({ id: fa[1], index: fa.index, fnNum: numMatch[1] });
+    const id = fa[1];
+    if (id.startsWith('page_')) continue;
+    const numMatch = /(\d+)$/.exec(id);
+    if (numMatch) fnAnchors.push({ id, index: fa.index, fnNum: numMatch[1] });
   }
 
   const preciseMap = {};
