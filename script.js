@@ -683,26 +683,45 @@ function isInsideExistingAnchor(pos){
   // If the most recent tag before pos is an opening <a, we're inside it
   return lastOpen > lastClose;
 }
-function findSeeAlsoOffset(selectedText, targetId) {
-  const liRange = findLiRangeById(targetId);
+function findSeeAlsoOffset(selectedText, targetId, sourceLiId=null){
+  const targetLiRange=findLiRangeById(targetId);
 
-  // Build a regex that tolerates any inline tags between words
-  // e.g. "Cervantes, Don Quixote" → /Cervantes,\s*(?:<[^>]+>\s*)*Don\s*(?:<[^>]+>\s*)*Quixote/
-  const escaped = selectedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = escaped.replace(/\s+/g, '\\s*(?:<[^>]+>\\s*)*');
-  const re = new RegExp(pattern);
+  // Determine search scope: if we know which <li> the selection came from, search only there.
+  // Otherwise fall back to full srcContent.
+  let searchScope, scopeOffset=0;
+  if(sourceLiId){
+    const srcLiRange=findLiRangeById(sourceLiId);
+    if(srcLiRange){
+      searchScope=srcContent.slice(srcLiRange.start, srcLiRange.end);
+      scopeOffset=srcLiRange.start;
+    }
+  }
+  if(!searchScope){
+    searchScope=srcContent;
+    scopeOffset=0;
+  }
 
-  let searchStart = 0;
-  while (true) {
-    const sub = srcContent.slice(searchStart);
-    const m = re.exec(sub);
-    if (!m) return null;
-    const found = searchStart + m.index;
-    const end = found + m[0].length;
-    const insideAnchor = isInsideExistingAnchor(found);
-    const insideTargetLi = liRange && found >= liRange.start && found < liRange.end;
-    if (!insideAnchor && !insideTargetLi) return { srcStart: found, srcEnd: end };
-    searchStart = found + 1;
+  // Build a tag-tolerant regex:
+  // Split selectedText on whitespace AND on punctuation+whitespace boundaries
+  // so "Cervantes, Don Quixote" matches "Cervantes, <i>Don Quixote</i>"
+  const parts=selectedText.split(/(\s+)/);
+  const regexParts=parts.map(p=>{
+    if(/^\s+$/.test(p)) return '\\s*(?:<[^>]+>\\s*)*'; // whitespace gap: allow tags
+    return p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');     // escape literal text
+  });
+  const re=new RegExp(regexParts.join(''));
+
+  let searchStart=0;
+  while(true){
+    const sub=searchScope.slice(searchStart);
+    const m=re.exec(sub);
+    if(!m) return null;
+    const found=scopeOffset+searchStart+m.index;
+    const end=found+m[0].length;
+    const insideAnchor=isInsideExistingAnchor(found);
+    const insideTargetLi=targetLiRange&&found>=targetLiRange.start&&found<targetLiRange.end;
+    if(!insideAnchor&&!insideTargetLi) return {srcStart:found, srcEnd:end};
+    searchStart+=m.index+1;
   }
 }
 
@@ -1387,7 +1406,10 @@ mainBody.addEventListener('mouseup',(e)=>{
       if(entries.length===0) return;
       const range=sel.getRangeAt(0);
       const rect=range.getBoundingClientRect();
-      showSeeAlsoPopup(selectedText, entries, rect, range);
+      // find which <li> the selection originated from
+      const anchorLi=sel.anchorNode.parentElement&&sel.anchorNode.parentElement.closest('li');
+      const sourceLiId=anchorLi?anchorLi.id:null;
+      showSeeAlsoPopup(selectedText, entries, rect, range, null, sourceLiId);
       sel.removeAllRanges();
       return;
     }
@@ -1507,7 +1529,7 @@ function showSeeAlsoEditPopup(mark){
   });
 }
 
-function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null){
+function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null, sourceLiId=null){
   document.querySelectorAll('.see-also-popup').forEach(p=>p.remove());
 
   const popup=document.createElement('div');
@@ -1618,7 +1640,7 @@ function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null){
     if(onPick){
       onPick(btn.dataset.id, btn.dataset.text);
     } else {
-      applySeeAlsoLink(selectedText, btn.dataset.id, btn.dataset.text, range);
+      applySeeAlsoLink(selectedText, btn.dataset.id, btn.dataset.text, range, sourceLiId);
     }
   });
 
@@ -1629,10 +1651,10 @@ function showSeeAlsoPopup(selectedText, entries, rect, range, onPick=null){
   });
 }
 
-function applySeeAlsoLink(selectedText, targetId, targetText, range){
+function applySeeAlsoLink(selectedText, targetId, targetText, range, sourceLiId=null){
   // Record in seeAlsoLinks array for later apply
   const saIndex=seeAlsoLinks.length;
-  const offset=findSeeAlsoOffset(selectedText, targetId);
+  const offset=findSeeAlsoOffset(selectedText, targetId, sourceLiId);
   seeAlsoLinks.push({
     selectedText, targetId, targetText, applied:false,
     srcStart: offset?offset.srcStart:null,

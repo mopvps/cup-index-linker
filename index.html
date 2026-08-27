@@ -1,194 +1,199 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Index Linker</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f07030' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='3' width='18' height='7' rx='1'/><rect x='3' y='14' width='18' height='7' rx='1'/><line x1='3' y1='11' x2='7' y2='11'/><line x1='10' y1='11' x2='14' y2='11'/><line x1='17' y1='11' x2='21' y2='11'/></svg>" />
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="style.css"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Index Linker</title>
+  <link rel="icon" type="image/svg+xml"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f07030' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='3' width='18' height='7' rx='1'/><rect x='3' y='14' width='18' height='7' rx='1'/><line x1='3' y1='11' x2='7' y2='11'/><line x1='10' y1='11' x2='14' y2='11'/><line x1='17' y1='11' x2='21' y2='11'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
-<body> 
 
-<!-- ============ TOASTS ============ -->
-<div class="toast-stack" id="toastStack" aria-live="polite"></div>
+<body>
 
-<!-- ============ HOVER TOOLTIP ============ -->
-<div class="tip" id="tip" hidden role="tooltip"></div>
+  <!-- ============ TOASTS ============ -->
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
-<div class="layout">
+  <!-- ============ HOVER TOOLTIP ============ -->
+  <div class="tip" id="tip" hidden role="tooltip"></div>
 
-  <!-- ============ SIDEBAR ============ -->
-  <aside class="sidebar" data-active-tab="1">
+  <div class="layout">
 
-    <div class="brand">
-      <img src="logo.webp" alt="VilPower Logo" class="brand-logo"/>
-    </div>
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar" data-active-tab="1">
 
-    <div class="steps">
+      <div class="brand">
+        <img src="logo.webp" alt="VilPower Logo" class="brand-logo" />
+      </div>
 
-      <!-- STEP 1 -->
-      <div class="step" id="step1">
-        <div class="step-head">
-          <span class="step-num">1</span>
-          <span class="step-title">Select XHTML Folder</span>
-          <span class="step-check" id="folderCheck"><i data-lucide="check"></i></span>
+      <div class="steps">
+
+        <!-- STEP 1 -->
+        <div class="step" id="step1">
+          <div class="step-head">
+            <span class="step-num">1</span>
+            <span class="step-title">Select XHTML Folder</span>
+            <span class="step-check" id="folderCheck"><i data-lucide="check"></i></span>
+          </div>
+          <button class="step-btn" id="pickFolder">
+            <i data-lucide="folder-open" class="lg"></i>
+            <span class="step-btn-text" id="folderBtnText">Choose Folder</span>
+            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+          </button>
+          <div class="step-status" id="folderStatus">Folder holding all xhtml files</div>
         </div>
-        <button class="step-btn" id="pickFolder">
-          <i data-lucide="folder-open" class="lg"></i>
-          <span class="step-btn-text" id="folderBtnText">Choose Folder</span>
-          <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+
+        <!-- STEP 2 -->
+        <div class="step step-index" id="step2" data-tab="1">
+          <div class="step-head">
+            <span class="step-num">2</span>
+            <span class="step-title">Select Index File</span>
+            <span class="step-check" id="fileCheck"><i data-lucide="check"></i></span>
+          </div>
+          <button class="step-btn" id="pickFile" disabled>
+            <i data-lucide="file-code" class="lg"></i>
+            <span class="step-btn-text" id="fileBtnText">Choose File</span>
+            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+          </button>
+          <div class="step-status" id="fileStatus">File with plain page numbers</div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div class="step" id="step3">
+          <div class="step-head">
+            <span class="step-num">3</span>
+            <span class="step-title">Select Notes File</span>
+            <span class="step-check" id="notesCheck"><i data-lucide="check"></i></span>
+          </div>
+          <button class="step-btn" id="pickNotes">
+            <i data-lucide="file-text" class="lg"></i>
+            <span class="step-btn-text" id="notesBtnText">Choose File</span>
+            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+          </button>
+          <div class="step-status" id="notesStatus">Optional — xhtml file containing footnotes</div>
+        </div>
+
+        <!-- STEP 4 — Apply IDs -->
+        <div class="step" id="step4">
+          <div class="step-head">
+            <span class="step-num">4</span>
+            <span class="step-title">ID Prefix</span>
+          </div>
+          <div class="id-prefix-wrap">
+            <span class="id-prefix-hash">#</span>
+            <input type="text" id="idPrefixInput" class="id-prefix-input" placeholder="e.g. bm_ind" autocomplete="off"
+              spellcheck="false" />
+          </div>
+          <div class="step-status" id="idPrefixStatus">e.g. bm_ind → bm_ind0001</div>
+        </div>
+
+      </div>
+
+      <div class="sidebar-foot">
+
+        <div class="progress-wrap" id="progressWrap" hidden>
+          <div class="progress-label">
+            <span id="progressText">Mapping anchors</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-track" role="progressbar" aria-labelledby="progressText">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+
+        <button class="btn-apply-id" id="applyIdBtn" disabled>
+          <i data-lucide="tag"></i>
+          <span>Apply IDs</span>
         </button>
-        <div class="step-status" id="folderStatus">Folder holding all xhtml files</div>
-      </div>
 
-      <!-- STEP 2 -->
-      <div class="step step-index" id="step2" data-tab="1">
-        <div class="step-head">
-          <span class="step-num">2</span>
-          <span class="step-title">Select Index File</span>
-          <span class="step-check" id="fileCheck"><i data-lucide="check"></i></span>
-        </div>
-        <button class="step-btn" id="pickFile" disabled>
-          <i data-lucide="file-code" class="lg"></i>
-          <span class="step-btn-text" id="fileBtnText">Choose File</span>
-          <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+        <label class="switch roman-toggle">
+          <input type="checkbox" id="romanToggle" />
+          <span class="track"></span>
+          <span>Roman Letter Detection</span>
+        </label>
+
+        <button class="btn-run btn-fn-scan" id="fnRunBtn" disabled>
+          <i data-lucide="file-search"></i>
+          <span id="fnRunBtnText">Scan Footnotes</span>
         </button>
-        <div class="step-status" id="fileStatus">File with plain page numbers</div>
-      </div>
 
-      <!-- STEP 3 -->
-      <div class="step" id="step3">
-        <div class="step-head">
-          <span class="step-num">3</span>
-          <span class="step-title">Select Notes File</span>
-          <span class="step-check" id="notesCheck"><i data-lucide="check"></i></span>
-        </div>
-        <button class="step-btn" id="pickNotes">
-          <i data-lucide="file-text" class="lg"></i>
-          <span class="step-btn-text" id="notesBtnText">Choose File</span>
-          <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+        <button class="btn-run btn-scan" id="runBtn" disabled>
+          <i data-lucide="scan-search"></i>
+          <span id="runBtnText">Scan &amp; Fix</span>
         </button>
-        <div class="step-status" id="notesStatus">Optional — xhtml file containing footnotes</div>
+
+        <button class="theme-btn" id="themeToggle" aria-label="Toggle color theme">
+          <i data-lucide="moon" id="themeIcon"></i>
+          <span id="themeLabel">Dark mode</span>
+        </button>
+
+      </div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main class="main">
+
+      <!-- tab bar -->
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tabBtn1" data-tab="1">
+          <i data-lucide="link-2"></i><span>Pagebreak Fixer</span>
+        </button>
       </div>
 
-      <!-- STEP 4 — Apply IDs -->
-      <div class="step" id="step4">
-        <div class="step-head">
-          <span class="step-num">4</span>
-          <span class="step-title">ID Prefix</span>
+      <!-- ============ TAB 1 PANE ============ -->
+      <div class="tab-pane" id="tabPane1">
+
+        <!-- summary bar -->
+        <div class="summary-bar" id="summaryBar" hidden>
+          <div class="stat total">
+            <span class="stat-num" id="cTotal">0</span>
+            <span class="stat-label">Numbers Found</span>
+          </div>
+          <div class="stat pass">
+            <span class="stat-num" id="cFixed">0</span>
+            <span class="stat-label">Linked</span>
+          </div>
+          <div class="stat fail">
+            <span class="stat-num" id="cNotFound">0</span>
+            <span class="stat-label">Anchor Missing</span>
+          </div>
+          <div class="stat warn">
+            <span class="stat-num" id="cFiles">0</span>
+            <span class="stat-label">Files Scanned</span>
+          </div>
+          <div class="summary-actions">
+            <button class="btn-ghost" id="copyBtn" disabled><i data-lucide="copy"></i><span>Copy</span></button>
+            <button class="btn-save" id="saveBtn" disabled><i data-lucide="save"></i><span>Save File</span></button>
+          </div>
         </div>
-        <div class="id-prefix-wrap">
-          <span class="id-prefix-hash">#</span>
-          <input type="text" id="idPrefixInput" class="id-prefix-input"
-                 placeholder="e.g. bm_ind" autocomplete="off" spellcheck="false"/>
+
+        <!-- results / empty state -->
+        <div class="main-body" id="mainBody">
+          <div class="empty-state">
+            <span class="empty-icon"><i data-lucide="bookmark"></i></span>
+            <h2>Nothing scanned yet</h2>
+            <p>Pick the folder holding your EPUB's xhtml files, then pick the index file
+              with plain page numbers. Scan converts each number into a pagebreak link.</p>
+            <span class="empty-hint">
+              <i data-lucide="arrow-left"></i> Start with step 1 in the sidebar
+            </span>
+          </div>
         </div>
-        <div class="step-status" id="idPrefixStatus">e.g. bm_ind → bm_ind0001</div>
-      </div>
 
-    </div>
+      </div><!-- /tabPane1 -->
 
-    <div class="sidebar-foot">
+    </main>
+  </div>
 
-      <div class="progress-wrap" id="progressWrap" hidden>
-        <div class="progress-label">
-          <span id="progressText">Mapping anchors</span>
-          <span id="progressPct">0%</span>
-        </div>
-        <div class="progress-track" role="progressbar" aria-labelledby="progressText">
-          <div class="progress-fill" id="progressFill"></div>
-        </div>
-      </div>
-
-      <button class="btn-apply-id" id="applyIdBtn" disabled>
-        <i data-lucide="tag"></i>
-        <span>Apply IDs</span>
-      </button>
-
-      <label class="switch roman-toggle">
-        <input type="checkbox" id="romanToggle"/>
-        <span class="track"></span>
-        <span>Roman Letter Detection</span>
-      </label>
-
-      <button class="btn-run btn-fn-scan" id="fnRunBtn" disabled>
-        <i data-lucide="file-search"></i>
-        <span id="fnRunBtnText">Scan Footnotes</span>
-      </button>
-
-      <button class="btn-run btn-scan" id="runBtn" disabled>
-        <i data-lucide="scan-search"></i>
-        <span id="runBtnText">Scan &amp; Fix</span>
-      </button>
-
-      <button class="theme-btn" id="themeToggle" aria-label="Toggle color theme">
-        <i data-lucide="moon" id="themeIcon"></i>
-        <span id="themeLabel">Dark mode</span>
-      </button>
-
-    </div>
-  </aside>
-
-  <!-- ============ MAIN ============ -->
-  <main class="main">
-
-    <!-- tab bar -->
-    <div class="tab-bar">
-      <button class="tab-btn active" id="tabBtn1" data-tab="1">
-        <i data-lucide="link-2"></i><span>Pagebreak Fixer</span>
-      </button>
-    </div>
-
-    <!-- ============ TAB 1 PANE ============ -->
-    <div class="tab-pane" id="tabPane1">
-
-    <!-- summary bar -->
-    <div class="summary-bar" id="summaryBar" hidden>
-      <div class="stat total">
-        <span class="stat-num" id="cTotal">0</span>
-        <span class="stat-label">Numbers Found</span>
-      </div>
-      <div class="stat pass">
-        <span class="stat-num" id="cFixed">0</span>
-        <span class="stat-label">Linked</span>
-      </div>
-      <div class="stat fail">
-        <span class="stat-num" id="cNotFound">0</span>
-        <span class="stat-label">Anchor Missing</span>
-      </div>
-      <div class="stat warn">
-        <span class="stat-num" id="cFiles">0</span>
-        <span class="stat-label">Files Scanned</span>
-      </div>
-      <div class="summary-actions">
-        <button class="btn-ghost" id="copyBtn" disabled><i data-lucide="copy"></i><span>Copy</span></button>
-        <button class="btn-save" id="saveBtn" disabled><i data-lucide="save"></i><span>Save File</span></button>
-      </div>
-    </div>
-
-    <!-- results / empty state -->
-    <div class="main-body" id="mainBody">
-      <div class="empty-state">
-        <span class="empty-icon"><i data-lucide="bookmark"></i></span>
-        <h2>Nothing scanned yet</h2>
-        <p>Pick the folder holding your EPUB's xhtml files, then pick the index file
-           with plain page numbers. Scan converts each number into a pagebreak link.</p>
-        <span class="empty-hint">
-          <i data-lucide="arrow-left"></i> Start with step 1 in the sidebar
-        </span>
-      </div>
-    </div>
-
-    </div><!-- /tabPane1 -->
-
-  </main>
-</div>
-
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
-<script src="script.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+  <script src="script.js"></script>
 </body>
+
 </html>
