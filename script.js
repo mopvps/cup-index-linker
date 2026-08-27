@@ -502,7 +502,7 @@ function collectCandidates(content, anchorMap){
     const maskedFn = masked2.replace(/\b\d+n\.\d+\b/g, m => ' '.repeat(m.length));
 
     // detect ranges like "63-5", "63–5", "63—5"
-    const RANGE_RE=/\b(\d+)\s*[-–—]\s*(\d+)\b/g;
+    const RANGE_RE=/\b(\d+)\s*(?:[-–—]|&#x2013;|&#8211;|&#x2014;|&#8212;|&ndash;|&mdash;)\s*(\d+)\b/g;
     const rangePositions=[];
     let rr;
     RANGE_RE.lastIndex=0;
@@ -683,17 +683,26 @@ function isInsideExistingAnchor(pos){
   // If the most recent tag before pos is an opening <a, we're inside it
   return lastOpen > lastClose;
 }
-function findSeeAlsoOffset(selectedText, targetId){
-  const liRange=findLiRangeById(targetId);
-  let idx=0;
-  while(true){
-    const found=srcContent.indexOf(selectedText, idx);
-    if(found===-1) return null;
-    const end=found+selectedText.length;
-    const insideAnchor=isInsideExistingAnchor(found);
-    const insideTargetLi=liRange&&found>=liRange.start&&found<liRange.end;
-    if(!insideAnchor&&!insideTargetLi) return {srcStart:found,srcEnd:end};
-    idx=found+1;
+function findSeeAlsoOffset(selectedText, targetId) {
+  const liRange = findLiRangeById(targetId);
+
+  // Build a regex that tolerates any inline tags between words
+  // e.g. "Cervantes, Don Quixote" → /Cervantes,\s*(?:<[^>]+>\s*)*Don\s*(?:<[^>]+>\s*)*Quixote/
+  const escaped = selectedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = escaped.replace(/\s+/g, '\\s*(?:<[^>]+>\\s*)*');
+  const re = new RegExp(pattern);
+
+  let searchStart = 0;
+  while (true) {
+    const sub = srcContent.slice(searchStart);
+    const m = re.exec(sub);
+    if (!m) return null;
+    const found = searchStart + m.index;
+    const end = found + m[0].length;
+    const insideAnchor = isInsideExistingAnchor(found);
+    const insideTargetLi = liRange && found >= liRange.start && found < liRange.end;
+    if (!insideAnchor && !insideTargetLi) return { srcStart: found, srcEnd: end };
+    searchStart = found + 1;
   }
 }
 
