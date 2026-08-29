@@ -109,10 +109,10 @@ function collectFootnoteCandidates(content) {
   P_RE_FN.lastIndex = 0;
   while ((pm = P_RE_FN.exec(content)) !== null) {
     const inner = pm[2];
-    if (!/\d+n\.\d+/.test(inner)) continue;
+    if (!/\d+\s*n\.\s*\d+/.test(inner)) continue;
     const innerStart = pm.index + pm[1].length;
     const masked = inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, m => ' '.repeat(m.length));
-    const FN_RE = /\b(\d+)n\.(\d+)\b/g;
+    const FN_RE = /\b(\d+)\s*n\.\s*(\d+)\b/g;
     let fn;
     FN_RE.lastIndex = 0;
     while ((fn = FN_RE.exec(masked)) !== null) {
