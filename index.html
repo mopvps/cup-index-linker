@@ -84,11 +84,6 @@
           <span>Apply IDs</span>
         </button>
 
-        <label class="switch roman-toggle">
-          <input type="checkbox" id="romanToggle" />
-          <span class="track"></span>
-          <span>Roman Letter Detection</span>
-        </label>
 
         <button class="btn-run btn-scan" id="runBtn" disabled>
           <i data-lucide="scan-search"></i>
@@ -251,6 +246,33 @@
       </div><!-- /tabPane2 -->
 
     </main>
+  </div>
+
+  <div class="scan-modal-overlay" id="scanModalOverlay" hidden>
+    <div class="scan-modal">
+      <div class="scan-modal-head">
+        <span class="scan-modal-title">Scan Options</span>
+        <button class="scan-modal-close" id="scanModalClose" aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="scan-modal-body">
+        <label class="switch">
+          <input type="checkbox" id="romanToggle" />
+          <span class="track"></span>
+          <span>Roman Letter Detection</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="nSuffixToggle" />
+          <span class="track"></span>
+          <span>Link bare n-refs as page (e.g. 154n20 → 154)</span>
+        </label>
+      </div>
+      <div class="scan-modal-foot">
+        <button class="btn-run" id="scanModalRun">
+          <i data-lucide="scan-search"></i>
+          <span>Run Scan</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>

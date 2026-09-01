@@ -1497,3 +1497,42 @@ body.crop-mode #previewContainer{
   pointer-events:none;
   letter-spacing:0.01em;
 }
+
+/* ── Scan Options Modal ── */
+.scan-modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;
+  z-index:900;
+}
+.scan-modal-overlay[hidden]{display:none;}
+.scan-modal{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:0;width:360px;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);
+}
+.scan-modal-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);
+}
+.scan-modal-title{font-weight:600;font-size:.95rem;}
+.scan-modal-close{
+  background:none;border:none;cursor:pointer;
+  color:var(--text-muted);padding:4px;border-radius:6px;
+  display:flex;align-items:center;
+}
+.scan-modal-close:hover{color:var(--text);background:var(--hover);}
+.scan-modal-body{
+  padding:20px;display:flex;flex-direction:column;gap:16px;
+}
+.scan-modal-body .switch{font-size:.88rem;}
+.scan-modal-foot{
+  padding:16px 20px;border-top:1px solid var(--border);
+  display:flex;justify-content:flex-end;
+}
+.scan-modal-foot .btn-run{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 20px;border-radius:8px;
+  background:var(--accent);color:#fff;
+  border:none;cursor:pointer;font-weight:600;font-size:.88rem;
+}
+.scan-modal-foot .btn-run:hover{background:var(--accent-hover,#1a6af0);}
