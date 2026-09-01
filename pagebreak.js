@@ -356,7 +356,8 @@ function initPagebreak() {
     let pm;
     while ((pm = P_RE.exec(content)) !== null) {
       const inner = pm[3];
-      if (!/\b\d+\b/.test(inner) && !(pb_romanMode && /\b[IVXLCDMivxlcdm]+\b/i.test(inner))) continue;
+
+      if (!/\b\d+/.test(inner) && !(pb_romanMode && /\b[IVXLCDMivxlcdm]+\b/i.test(inner))) continue;
       const innerStart = pm.index + pm[1].length;
 
       const masked2 = inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, m => ' '.repeat(m.length));
