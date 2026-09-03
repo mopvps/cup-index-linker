@@ -207,17 +207,17 @@ function initPagebreak() {
   }
 
   function getTopLevelLiEntries() {
-    const allLi = /<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
+    const allLi = /<(li|td)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
     const positions = [];
     let mm;
     while ((mm = allLi.exec(pb_srcContent)) !== null) {
-      positions.push({ index: mm.index, attrs: mm[1], inner: mm[2] });
+      positions.push({ index: mm.index, attrs: mm[2], inner: mm[3] });
     }
     const entries = [];
     for (const pos of positions) {
       const before = pb_srcContent.slice(0, pos.index);
-      const openCount = (before.match(/<li\b/gi) || []).length;
-      const closeCount = (before.match(/<\/li>/gi) || []).length;
+      const openCount = (before.match(/<(li|td)\b/gi) || []).length;
+      const closeCount = (before.match(/<\/(li|td)>/gi) || []).length;
       if (openCount === closeCount) {
         const idMatch = /\bid="([^"]+)"/.exec(pos.attrs);
         const id = idMatch ? idMatch[1] : null;
@@ -520,10 +520,10 @@ function initPagebreak() {
      SEE-ALSO
      ========================================================== */
   function findLiRangeById(id) {
-    const re = /<li\b([^>]*)>([\s\S]*?)<\/li>/gi;
+    const re = /<(li|td)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
     let m;
     while ((m = re.exec(pb_srcContent)) !== null) {
-      const idMatch = /\bid="([^"]+)"/.exec(m[1]);
+      const idMatch = /\bid="([^"]+)"/.exec(m[2]);
       if (idMatch && idMatch[1] === id) {
         return { start: m.index, end: m.index + m[0].length };
       }
@@ -1220,7 +1220,7 @@ function initPagebreak() {
         if (entries.length === 0) return;
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
-        const anchorLi = sel.anchorNode.parentElement && sel.anchorNode.parentElement.closest('li');
+        const anchorLi = sel.anchorNode.parentElement && sel.anchorNode.parentElement.closest('li, td');
         const sourceLiId = anchorLi ? anchorLi.id : null;
         showSeeAlsoPopup(selectedText, entries, rect, range, null, sourceLiId);
         sel.removeAllRanges();
@@ -1291,22 +1291,22 @@ function initPagebreak() {
 
     try {
       let content = await readFile(pb_fileHandle);
-      content = content.replace(/<li(\s[^>]*?)?\s+id="[^"]*"/gi, (m, attrs) => {
-        return '<li' + (attrs || '');
+      content = content.replace(/<(li|td)(\s[^>]*?)?\s+id="[^"]*"/gi, (m, tag, attrs) => {
+        return '<' + tag + (attrs || '');
       });
       let counter = 1;
-      content = content.replace(/<li(\b[^>]*)?>/gi, (m, attrs) => {
+      content = content.replace(/<(li|td)(\b[^>]*)?>/gi, (m, tag, attrs) => {
         const id = `${rawPrefix}${String(counter++).padStart(4, '0')}`;
         if (attrs) {
           attrs = attrs.replace(/\s+id="[^"]*"/, '');
-          return `<li${attrs} id="${id}">`;
+          return `<${tag}${attrs} id="${id}">`;
         }
-        return `<li id="${id}">`;
+        return `<${tag} id="${id}">`;
       });
       const writable = await pb_fileHandle.createWritable();
       await writable.write(content);
       await writable.close();
-      toast(`IDs applied: ${counter - 1} <li> tags updated`, 'success');
+      toast(`IDs applied: ${counter - 1} <li>/<td > tags updated`, 'success');
     } catch (e) {
       toast('Error: ' + e.message, 'error');
     }
