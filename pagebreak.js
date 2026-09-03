@@ -1217,7 +1217,10 @@ function initPagebreak() {
       if (container && container.contains(sel.anchorNode)) {
         const selectedText = sel.toString().trim();
         const entries = getTopLevelLiEntries();
-        if (entries.length === 0) return;
+        if (entries.length === 0) {
+          toast('No entries with IDs found — click "Apply ID" first', 'error');
+          return;
+        }
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
         const anchorLi = sel.anchorNode.parentElement && sel.anchorNode.parentElement.closest('li, td');
@@ -1285,12 +1288,20 @@ function initPagebreak() {
   });
 
   document.getElementById('applyIdBtn').addEventListener('click', async () => {
+    const applyIdBtn = document.getElementById('applyIdBtn');
     if (!pb_fileHandle) { toast('Pick an index file first', 'error'); return; }
     const rawPrefix = document.getElementById('idPrefixInput').value.trim();
     if (!rawPrefix) { toast('Enter an ID prefix first', 'error'); return; }
 
+    applyIdBtn.disabled = true;
+    showProgress('Applying IDs to elements...');
+    setProgress(10, 100, 'Reading index file...');
+
     try {
-      let content = await readFile(pb_fileHandle);
+      await new Promise(r => setTimeout(r, 60));
+      let content = pb_srcContent || await readFile(pb_fileHandle);
+
+      setProgress(40, 100, 'Generating <li> and <td> IDs...');
       content = content.replace(/<(li|td)(\s[^>]*?)?\s+id="[^"]*"/gi, (m, tag, attrs) => {
         return '<' + tag + (attrs || '');
       });
@@ -1303,12 +1314,25 @@ function initPagebreak() {
         }
         return `<${tag} id="${id}">`;
       });
-      const writable = await pb_fileHandle.createWritable();
-      await writable.write(content);
-      await writable.close();
-      toast(`IDs applied: ${counter - 1} <li>/<td > tags updated`, 'success');
+
+      pb_srcContent = content;
+      pb_saveBtn.disabled = false;
+
+      if (pb_candidates && pb_candidates.length > 0) {
+        setProgress(70, 100, 'Updating preview...');
+        renderResults();
+      }
+
+      setProgress(100, 100, 'Complete!');
+      await new Promise(r => setTimeout(r, 150));
+      hideProgress();
+      toast(`IDs generated for ${counter - 1} tags. Click "Save" to export to disk.`, 'success');
     } catch (e) {
+      hideProgress();
       toast('Error: ' + e.message, 'error');
+    } finally {
+      applyIdBtn.disabled = false;
+      checkIdReady();
     }
   });
 
@@ -1607,7 +1631,7 @@ function initPagebreak() {
         setProgress(done, total, `${done}/${total} · ${fname}`);
       });
       setProgress(1, 1, 'Detecting numbers');
-      pb_srcContent = await readFile(pb_fileHandle);
+      if (!pb_srcContent) pb_srcContent = await readFile(pb_fileHandle);
       pb_candidates = collectCandidates(pb_srcContent, anchorMap);
       applyAutoRules();
       hideProgress();
@@ -1644,18 +1668,20 @@ function initPagebreak() {
      SAVE / COPY
      ========================================================== */
   pb_saveBtn.addEventListener('click', async () => {
-    if (!pb_fileHandle || !pb_applied) { toast('Click "Apply Selected" first', 'error'); return; }
+    const contentToSave = pb_applied ? pb_fixedContent : pb_srcContent;
+    if (!pb_fileHandle || !contentToSave) { toast('Nothing to save', 'error'); return; }
     try {
       const writable = await pb_fileHandle.createWritable();
-      await writable.write(pb_fixedContent);
+      await writable.write(contentToSave);
       await writable.close();
       toast(`Saved: ${pb_fileHandle.name}`, 'success');
     } catch (e) { toast('Save error: ' + e.message, 'error'); }
   });
 
   pb_copyBtn.addEventListener('click', () => {
-    if (!pb_applied) { toast('Click "Apply Selected" first', 'error'); return; }
-    navigator.clipboard.writeText(pb_fixedContent)
+    const contentToCopy = pb_applied ? pb_fixedContent : pb_srcContent;
+    if (!contentToCopy) { toast('Nothing to copy', 'error'); return; }
+    navigator.clipboard.writeText(contentToCopy)
       .then(() => toast('Copied to clipboard', 'success'))
       .catch(e => toast('Copy failed: ' + e.message, 'error'));
   });
