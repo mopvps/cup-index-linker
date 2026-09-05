@@ -310,12 +310,9 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible{
 /* ==========================================================
    SIDEBAR STEP VISIBILITY BY ACTIVE TAB
    ========================================================== */
-[data-active-tab="1"] .step-index    {display:flex;}
-[data-active-tab="2"] .step-index    {display:none;}
-[data-active-tab="1"] .step-contents {display:none;}
-[data-active-tab="2"] .step-contents {display:flex;}
 [data-active-tab="1"] .btn-scan      {display:flex;}
-[data-active-tab="2"] .btn-scan      {display:none;}
+[data-active-tab="2"] .btn-fn-scan   {display:flex;}
+[data-active-tab="3"] .btn-ext-scan  {display:flex;}
 
 /* ==========================================================
    TAB BAR
@@ -1055,13 +1052,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible{
   pointer-events:none;
 }
 
-/* ============ ANCHOR LINKER (Tab 3) ============ */
-.step-anchor{display:none;}
-.sidebar[data-active-tab="3"] .step-anchor{display:flex;}
-.sidebar[data-active-tab="3"] .step-index,
-.sidebar[data-active-tab="3"] .step-contents,
-.sidebar[data-active-tab="3"] #step1{display:none;}
-[data-active-tab="3"] .btn-scan{display:none;}
+
 
 .al-bar{
   display:flex;align-items:center;justify-content:space-between;

@@ -132,6 +132,46 @@
 
       </div><!-- /fnSidebar -->
 
+      <!-- TAB 3 SIDEBAR (Pagebreak nt. External) -->
+      <div class="steps" id="extSidebar" hidden>
+
+        <!-- STEP 1 -->
+        <div class="step" id="ext_step1">
+          <div class="step-head">
+            <span class="step-num">1</span>
+            <span class="step-title">Select XHTML Folder</span>
+            <span class="step-check" id="ext_folderCheck"><i data-lucide="check"></i></span>
+          </div>
+          <button class="step-btn" id="ext_pickFolder">
+            <i data-lucide="folder-open" class="lg"></i>
+            <span class="step-btn-text" id="ext_folderBtnText">Choose Folder</span>
+            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+          </button>
+          <div class="step-status" id="ext_folderStatus">Folder holding chapter xhtml files</div>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="step" id="ext_step2">
+          <div class="step-head">
+            <span class="step-num">2</span>
+            <span class="step-title">Select Index File</span>
+            <span class="step-check" id="ext_fileCheck"><i data-lucide="check"></i></span>
+          </div>
+          <button class="step-btn" id="ext_pickFile" disabled>
+            <i data-lucide="file-code" class="lg"></i>
+            <span class="step-btn-text" id="ext_fileBtnText">Choose File</span>
+            <i data-lucide="chevron-right" class="step-btn-arrow"></i>
+          </button>
+          <div class="step-status" id="ext_fileStatus">Index file with refs (e.g. 116n23-24)</div>
+        </div>
+
+        <button class="btn-run btn-ext-scan" id="extRunBtn" disabled>
+          <i data-lucide="scan-search"></i>
+          <span id="extRunBtnText">Scan External Notes</span>
+        </button>
+
+      </div><!-- /extSidebar -->
+
       <div class="sidebar-foot">
 
         <div class="progress-wrap" id="progressWrap" hidden>
@@ -162,6 +202,9 @@
         </button>
         <button class="tab-btn" id="tabBtn2" data-tab="2">
           <i data-lucide="file-search"></i><span>Pagebreak Footnote Link</span>
+        </button>
+        <button class="tab-btn" id="tabBtn3" data-tab="3">
+          <i data-lucide="external-link"></i><span>Pagebreak nt. External</span>
         </button>
       </div>
 
@@ -245,6 +288,48 @@
 
       </div><!-- /tabPane2 -->
 
+      <!-- ============ TAB 3 PANE (Pagebreak nt. External) ============ -->
+      <div class="tab-pane" id="tabPane3" hidden>
+
+        <!-- summary bar -->
+        <div class="summary-bar" id="ext_summaryBar" hidden>
+          <div class="stat total">
+            <span class="stat-num" id="ext_cTotal">0</span>
+            <span class="stat-label">Refs Found</span>
+          </div>
+          <div class="stat pass">
+            <span class="stat-num" id="ext_cFixed">0</span>
+            <span class="stat-label">Linked</span>
+          </div>
+          <div class="stat fail">
+            <span class="stat-num" id="ext_cNotFound">0</span>
+            <span class="stat-label">Anchor Missing</span>
+          </div>
+          <div class="stat warn">
+            <span class="stat-num" id="ext_cFiles">0</span>
+            <span class="stat-label">Files Scanned</span>
+          </div>
+          <div class="summary-actions">
+            <button class="btn-ghost" id="ext_copyBtn" disabled><i data-lucide="copy"></i><span>Copy</span></button>
+            <button class="btn-save" id="ext_saveBtn" disabled><i data-lucide="save"></i><span>Save File</span></button>
+          </div>
+        </div>
+
+        <!-- results / empty state -->
+        <div class="main-body" id="ext_mainBody">
+          <div class="empty-state">
+            <span class="empty-icon"><i data-lucide="external-link"></i></span>
+            <h2>Nothing scanned yet</h2>
+            <p>Pick the folder holding your EPUB's xhtml files, then pick the index file
+              with footnote refs like <code>116n23</code> or <code>116n23-24</code>. Scan finds the pagebreak location and links each ref externally.</p>
+            <span class="empty-hint">
+              <i data-lucide="arrow-left"></i> Start with step 1 in the sidebar
+            </span>
+          </div>
+        </div>
+
+      </div><!-- /tabPane3 -->
+
     </main>
   </div>
 
@@ -280,6 +365,7 @@
   <script src="shared.js"></script>
   <script src="pagebreak.js"></script>
   <script src="footnote.js"></script>
+  <script src="pagebreak_external.js"></script>
 </body>
 
 </html>

@@ -3,59 +3,59 @@
 /* ==========================================================
    ICONS — re-render lucide after any dynamic DOM insert
    ========================================================== */
-function icons(){
-  if(window.lucide&&window.lucide.createIcons) window.lucide.createIcons();
+function icons() {
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
 }
 icons();
 
 /* ==========================================================
    TOASTS
    ========================================================== */
-function toast(msg,type='success',ms=3200){
-  const toastStack=document.getElementById('toastStack');
-  const el=document.createElement('div');
-  el.className='toast '+type;
-  el.setAttribute('role',type==='error'?'alert':'status');
-  el.innerHTML=`<span class="t-icon"><i data-lucide="${type==='error'?'alert-triangle':'check-circle-2'}"></i></span>
+function toast(msg, type = 'success', ms = 3200) {
+  const toastStack = document.getElementById('toastStack');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  el.innerHTML = `<span class="t-icon"><i data-lucide="${type === 'error' ? 'alert-triangle' : 'check-circle-2'}"></i></span>
                 <span class="t-msg"></span>`;
-  el.querySelector('.t-msg').textContent=msg;
+  el.querySelector('.t-msg').textContent = msg;
   toastStack.appendChild(el);
   icons();
-  const kill=()=>{
-    if(el.dataset.dying) return;
-    el.dataset.dying='1';
+  const kill = () => {
+    if (el.dataset.dying) return;
+    el.dataset.dying = '1';
     el.classList.add('out');
-    el.addEventListener('animationend',()=>el.remove(),{once:true});
-    setTimeout(()=>el.remove(),500);
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+    setTimeout(() => el.remove(), 500);
   };
-  const t=setTimeout(kill,ms);
-  el.addEventListener('click',()=>{clearTimeout(t);kill();});
+  const t = setTimeout(kill, ms);
+  el.addEventListener('click', () => { clearTimeout(t); kill(); });
 }
 
 /* ==========================================================
    THEME (persisted in localStorage)
    ========================================================== */
-function applyTheme(dark){
-  const html=document.documentElement;
-  const themeLabel=document.getElementById('themeLabel');
-  html.setAttribute('data-theme',dark?'dark':'light');
-  themeLabel.textContent=dark?'Light mode':'Dark mode';
+function applyTheme(dark) {
+  const html = document.documentElement;
+  const themeLabel = document.getElementById('themeLabel');
+  html.setAttribute('data-theme', dark ? 'dark' : 'light');
+  themeLabel.textContent = dark ? 'Light mode' : 'Dark mode';
   // lucide swaps <i> for <svg>, so replace the node with a fresh <i> each time
-  const old=document.getElementById('themeIcon');
-  const fresh=document.createElement('i');
-  fresh.id='themeIcon';
-  fresh.setAttribute('data-lucide',dark?'sun':'moon');
+  const old = document.getElementById('themeIcon');
+  const fresh = document.createElement('i');
+  fresh.id = 'themeIcon';
+  fresh.setAttribute('data-lucide', dark ? 'sun' : 'moon');
   old.replaceWith(fresh);
   icons();
 }
 
-function initSharedTheme(){
-  applyTheme(localStorage.getItem('theme')==='dark');
-  const themeBtn=document.getElementById('themeToggle');
-  themeBtn.addEventListener('click',()=>{
-    const dark=document.documentElement.getAttribute('data-theme')!=='dark';
+function initSharedTheme() {
+  applyTheme(localStorage.getItem('theme') === 'dark');
+  const themeBtn = document.getElementById('themeToggle');
+  themeBtn.addEventListener('click', () => {
+    const dark = document.documentElement.getAttribute('data-theme') !== 'dark';
     applyTheme(dark);
-    localStorage.setItem('theme',dark?'dark':'light');
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
   });
 }
 initSharedTheme();
@@ -63,43 +63,45 @@ initSharedTheme();
 /* ==========================================================
    FILE / ESCAPING HELPERS
    ========================================================== */
-async function readFile(h){return await(await h.getFile()).text();}
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
-  .replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+async function readFile(h) { return await (await h.getFile()).text(); }
+function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 /* ==========================================================
    PROGRESS
    ========================================================== */
-function showProgress(label){
-  const progWrap=document.getElementById('progressWrap'),
-        progText=document.getElementById('progressText'),
-        progFill=document.getElementById('progressFill'),
-        progPct =document.getElementById('progressPct');
-  progWrap.hidden=false;
-  progText.textContent=label;
-  progFill.style.width='0%';
-  progPct.textContent='0%';
+function showProgress(label) {
+  const progWrap = document.getElementById('progressWrap'),
+    progText = document.getElementById('progressText'),
+    progFill = document.getElementById('progressFill'),
+    progPct = document.getElementById('progressPct');
+  progWrap.hidden = false;
+  progText.textContent = label;
+  progFill.style.width = '0%';
+  progPct.textContent = '0%';
 }
-function setProgress(done,total,label){
-  const progFill=document.getElementById('progressFill'),
-        progText=document.getElementById('progressText'),
-        progPct =document.getElementById('progressPct');
-  const p=total?Math.round(done/total*100):0;
-  progFill.style.width=p+'%';
-  progPct.textContent=p+'%';
-  if(label) progText.textContent=label;
+function setProgress(done, total, label) {
+  const progFill = document.getElementById('progressFill'),
+    progText = document.getElementById('progressText'),
+    progPct = document.getElementById('progressPct');
+  const p = total ? Math.round(done / total * 100) : 0;
+  progFill.style.width = p + '%';
+  progPct.textContent = p + '%';
+  if (label) progText.textContent = label;
 }
-function hideProgress(){
-  document.getElementById('progressWrap').hidden=true;
+function hideProgress() {
+  document.getElementById('progressWrap').hidden = true;
 }
 
 /* ==========================================================
    SKELETON
    ========================================================== */
-function showSkeletons(summaryBar, mainBody){
-  summaryBar.hidden=true;
-  mainBody.innerHTML=`
+function showSkeletons(summaryBar, mainBody) {
+  summaryBar.hidden = true;
+  mainBody.innerHTML = `
     <div class="split">
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Loading file</span></div>
@@ -122,14 +124,14 @@ function showSkeletons(summaryBar, mainBody){
 /* ==========================================================
    COUNT-UP
    ========================================================== */
-function countUp(el,target,ms=650){
-  target=Number(target)||0;
-  if(target===0){el.textContent='0';return;}
-  const t0=performance.now();
-  function frame(t){
-    const k=Math.min(1,(t-t0)/ms), eased=1-Math.pow(1-k,3);
-    el.textContent=Math.round(target*eased).toLocaleString();
-    if(k<1) requestAnimationFrame(frame);
+function countUp(el, target, ms = 650) {
+  target = Number(target) || 0;
+  if (target === 0) { el.textContent = '0'; return; }
+  const t0 = performance.now();
+  function frame(t) {
+    const k = Math.min(1, (t - t0) / ms), eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(target * eased).toLocaleString();
+    if (k < 1) requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 }
@@ -137,41 +139,58 @@ function countUp(el,target,ms=650){
 /* ==========================================================
    MISC
    ========================================================== */
-function truncate(str,n){
-  return str.length>n ? str.slice(0,n)+'…' : str;
+function truncate(str, n) {
+  return str.length > n ? str.slice(0, n) + '…' : str;
 }
 
 const ROMAN_LIST = new Set([
-  'i','ii','iii','iv','v','vi','vii','viii','ix','x',
-  'xi','xii','xiii','xiv','xv','xvi','xvii','xviii','xix','xx',
-  'xxi','xxii','xxiii','xxiv','xxv','xxx','xl','l',
-  'I','II','III','IV','V','VI','VII','VIII','IX','X',
-  'XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX',
-  'XXI','XXII','XXIII','XXIV','XXV','XXX','XL','L'
+  'i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x',
+  'xi', 'xii', 'xiii', 'xiv', 'xv', 'xvi', 'xvii', 'xviii', 'xix', 'xx',
+  'xxi', 'xxii', 'xxiii', 'xxiv', 'xxv', 'xxx', 'xl', 'l',
+  'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X',
+  'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX',
+  'XXI', 'XXII', 'XXIII', 'XXIV', 'XXV', 'XXX', 'XL', 'L'
 ]);
 
 /* ==========================================================
-   TAB SWITCHER — shared between pagebreak.js and footnote.js
+   TAB SWITCHER — shared across all tabs
    ========================================================== */
-function initTabSwitcher(){
-  const tabBtn1=document.getElementById('tabBtn1'),
-        tabBtn2=document.getElementById('tabBtn2'),
-        tabPane1=document.getElementById('tabPane1'),
-        tabPane2=document.getElementById('tabPane2'),
-        pbSidebar=document.getElementById('pbSidebar'),
-        fnSidebar=document.getElementById('fnSidebar');
-  if(!tabBtn1||!tabBtn2) return;
+function initTabSwitcher() {
+  const tabBtns = document.querySelectorAll('.tab-bar .tab-btn');
+  const sidebar = document.querySelector('.sidebar');
+  if (!tabBtns.length) return;
 
-  function setTab(n){
-    tabBtn1.classList.toggle('active',n===1);
-    tabBtn2.classList.toggle('active',n===2);
-    tabPane1.hidden=n!==1;
-    tabPane2.hidden=n!==2;
-    pbSidebar.hidden=n!==1;
-    fnSidebar.hidden=n!==2;
+  function setTab(n) {
+    tabBtns.forEach(btn => {
+      const t = Number(btn.dataset.tab);
+      btn.classList.toggle('active', t === n);
+    });
+    const panes = {
+      1: document.getElementById('tabPane1'),
+      2: document.getElementById('tabPane2'),
+      3: document.getElementById('tabPane3')
+    };
+    const sidebars = {
+      1: document.getElementById('pbSidebar'),
+      2: document.getElementById('fnSidebar'),
+      3: document.getElementById('extSidebar')
+    };
+    for (const k in panes) {
+      if (panes[k]) panes[k].hidden = (Number(k) !== n);
+    }
+    for (const k in sidebars) {
+      if (sidebars[k]) sidebars[k].hidden = (Number(k) !== n);
+    }
+    if (sidebar) sidebar.setAttribute('data-active-tab', String(n));
   }
-  tabBtn1.addEventListener('click',()=>setTab(1));
-  tabBtn2.addEventListener('click',()=>setTab(2));
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const n = Number(btn.dataset.tab);
+      if (n) setTab(n);
+    });
+  });
+
   setTab(1);
 }
 initTabSwitcher();
